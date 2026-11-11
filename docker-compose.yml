@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chhath-puja-portal
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - ORIGIN=http://localhost:5000
+      - ADMIN_PIN_HASH=$2b$10$tAsGY5oFYr7ehZKA8HTVN.EBBudbBjpH5Aom1eiUzEnyojhO/iWYi
+      - JWT_SECRET=chhath-puja-samiti-super-secret-jwt-key-2026
+      - PUBLIC_BASE_URL=http://localhost:5000
+      - CHROME_PATH=/usr/bin/chromium
+      - WHATSAPP_CLOUD_ENABLED=false
+    volumes:
+      # Persistent SQLite database, generated receipts, and daily backups
+      - ./data:/app/data

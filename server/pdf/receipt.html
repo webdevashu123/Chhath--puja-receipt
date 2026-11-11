@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8" />
+<title>Donation Receipt {{bill_no}}</title>
+<style>
+  /* ---------- Fonts (inlined as base64 by receipt.js at render time) ---------- */
+  @font-face{font-family:'Hind';font-weight:400;src:url(fonts/hind-devanagari-400-normal.woff2) format('woff2');unicode-range:U+0900-097F,U+1CD0-1CF9,U+200C-200D,U+20A8,U+20B9,U+25CC,U+A830-A839,U+A8E0-A8FF;}
+  @font-face{font-family:'Hind';font-weight:600;src:url(fonts/hind-devanagari-600-normal.woff2) format('woff2');unicode-range:U+0900-097F,U+1CD0-1CF9,U+200C-200D,U+20A8,U+20B9,U+25CC,U+A830-A839,U+A8E0-A8FF;}
+  @font-face{font-family:'Hind';font-weight:700;src:url(fonts/hind-devanagari-700-normal.woff2) format('woff2');unicode-range:U+0900-097F,U+1CD0-1CF9,U+200C-200D,U+20A8,U+20B9,U+25CC,U+A830-A839,U+A8E0-A8FF;}
+  @font-face{font-family:'Hind';font-weight:400;src:url(fonts/hind-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+  @font-face{font-family:'Hind';font-weight:600;src:url(fonts/hind-latin-600-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+  @font-face{font-family:'Hind';font-weight:700;src:url(fonts/hind-latin-700-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+  @font-face{font-family:'Poppins';font-weight:500;src:url(fonts/poppins-latin-500-normal.woff2) format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:600;src:url(fonts/poppins-latin-600-normal.woff2) format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:700;src:url(fonts/poppins-latin-700-normal.woff2) format('woff2');}
+  @font-face{font-family:'Tiro';font-weight:400;src:url(fonts/tiro-devanagari-hindi-devanagari-400-normal.woff2) format('woff2');unicode-range:U+0900-097F,U+1CD0-1CF9,U+200C-200D,U+20A8,U+20B9,U+25CC,U+A830-A839,U+A8E0-A8FF;}
+  @font-face{font-family:'Tiro';font-weight:400;src:url(fonts/tiro-devanagari-hindi-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+
+  /* ---------- Design tokens ---------- */
+  :root{
+    --saffron:#F25C05; --saffron-deep:#C2410C;
+    --navy:#0D3B66; --navy-deep:#082a4a;
+    --gold:#F4B942; --gold-deep:#B8860B;
+    --cream:#FFF8F1; --cream-2:#FFEEDB;
+    --ink:#1b2a3a; --muted:#6b7a89;
+  }
+  @page{ size:A4; margin:0; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:210mm; height:297mm; }
+  body{
+    font-family:'Hind','Poppins',sans-serif; color:var(--ink);
+    background:var(--cream);
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .page{ position:relative; width:210mm; height:297mm; overflow:hidden; background:
+      radial-gradient(circle at 1.5mm 1.5mm, rgba(244,185,66,.22) .35mm, transparent .4mm) 0 0/6mm 6mm,
+      radial-gradient(circle at 50% 55%, #fff 0, var(--cream) 60%, var(--cream-2) 100%); }
+
+  /* ---------- Page border (outside) + sheet (inside) ---------- */
+  .sheet{ position:absolute; inset:7.2mm; display:flex; flex-direction:column; overflow:hidden; border-radius:1.6mm; background:radial-gradient(circle at 50% 55%, #fff 0, var(--cream) 60%, var(--cream-2) 100%); box-shadow:0 0 0 .3mm var(--gold); }
+  /* ---------- Frame ---------- */
+  .frame{ position:absolute; inset:3.6mm; border:0.8mm solid var(--gold); border-radius:2.4mm; pointer-events:none; z-index:1; }
+  .frame::after{ content:''; position:absolute; inset:1.3mm; border:0.3mm solid var(--saffron); border-radius:1.6mm; }
+  .dia{ position:absolute; width:4.2mm; height:4.2mm; background:var(--gold); transform:rotate(45deg); border:0.45mm solid var(--saffron); z-index:2; }
+  .dia.tl{ top:1.5mm; left:1.5mm; } .dia.tr{ top:1.5mm; right:1.5mm; }
+  .dia.bl{ bottom:1.5mm; left:1.5mm; } .dia.br{ bottom:1.5mm; right:1.5mm; }
+
+  /* ---------- Watermark ---------- */
+  .watermark{ position:absolute; left:50%; top:56%; width:140mm; height:140mm; transform:translate(-50%,-50%); opacity:.055; z-index:0; }
+
+  /* ---------- Header ---------- */
+  .header{
+    position:relative; z-index:2; height:46mm; flex-shrink:0; padding:5mm 12mm 0; text-align:center; color:#fff;
+    background:
+      radial-gradient(ellipse 85% 70% at 50% 118%, #FFD36B 0, var(--gold) 18%, var(--saffron) 42%, rgba(13,59,102,0) 72%),
+      linear-gradient(180deg, var(--navy-deep) 0%, var(--navy) 55%, #1d5a94 100%);
+  }
+  .header .blessing{ font-family:'Tiro','Hind',serif; font-size:10.5pt; color:var(--gold); letter-spacing:.3mm; }
+  .header .en-title{ font-family:'Poppins',sans-serif; font-weight:700; font-size:21pt; line-height:1.15; margin-top:.8mm; letter-spacing:.3mm; text-shadow:0 .6mm 1.6mm rgba(0,0,0,.35); color:#fff; }
+  .header .hi-title{ font-family:'Tiro','Hind',serif; font-size:17pt; line-height:1.25; margin-top:.4mm; color:var(--gold); text-shadow:0 .5mm 1.2mm rgba(0,0,0,.3); }
+  .header .hi-place{ font-family:'Hind','Poppins',sans-serif; font-weight:600; font-size:10.5pt; color:#ffe9c2; margin-top:.6mm; }
+    .toran{ position:absolute; left:0; right:0; bottom:-0.2mm; height:9mm; z-index:3; }
+  .toran svg{ width:100%; height:100%; display:block; }
+
+  .badge{
+    position:absolute; z-index:5; left:50%; top:35.5mm; transform:translateX(-50%);
+    width:26mm; height:26mm; border-radius:50%;
+    background:radial-gradient(circle at 50% 40%, #fff 0, var(--cream) 100%);
+    border:1.2mm solid var(--gold); box-shadow:0 0 0 1.2mm var(--saffron), 0 2mm 5mm rgba(13,59,102,.28);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .badge svg{ width:18.5mm; height:18.5mm; }
+
+  /* ---------- Title ---------- */
+  .title{ position:relative; z-index:2; text-align:center; margin-top:16mm; flex-shrink:0; }
+  .title .en{ font-family:'Poppins',sans-serif; font-weight:700; font-size:18pt; color:var(--navy); line-height:1.1; letter-spacing:.4mm; }
+  .title .hi{ font-family:'Tiro','Hind',serif; font-size:14pt; color:var(--saffron); margin-top:.6mm; }
+  .title .rule{ display:flex; align-items:center; justify-content:center; gap:3mm; margin-top:1.8mm; }
+  .title .rule i{ display:block; width:34mm; height:.5mm; background:linear-gradient(90deg,transparent,var(--gold),transparent); }
+  .title .rule b{ display:block; width:2.4mm; height:2.4mm; background:var(--saffron); transform:rotate(45deg); }
+
+  /* ---------- Meta pills ---------- */
+  .meta{ position:relative; z-index:2; display:flex; justify-content:center; gap:7mm; margin-top:3mm; padding:0 14mm; flex-shrink:0; }
+  .pill{ flex:1; max-width:78mm; display:flex; align-items:center; justify-content:space-between; gap:4mm;
+         padding:1.6mm 5mm; border-radius:10mm; background:#fff; border:0.35mm solid var(--gold);
+         box-shadow:0 1mm 2.5mm rgba(13,59,102,.08); }
+  .lbl{ line-height:1.2; display:flex; flex-direction:column-reverse; }
+  .lbl .h{ font-weight:600; font-size:8.6pt; color:var(--muted); display:block; }
+  .lbl .e{ font-family:'Poppins',sans-serif; font-weight:600; font-size:8pt; color:var(--saffron-deep); letter-spacing:.5mm; display:block; text-transform:uppercase; }
+  .pill .val{ font-family:'Poppins',sans-serif; font-weight:700; font-size:12pt; color:var(--navy); white-space:nowrap; }
+
+  /* ---------- Details card ---------- */
+  .card{ position:relative; z-index:2; margin:3mm 14mm 0; padding:3mm 6.5mm; flex-shrink:0; border-radius:4mm; background:#fff;
+         border:0.35mm solid #f1dcc0; box-shadow:0 1.5mm 5mm rgba(13,59,102,.09); }
+  .card::before{ content:''; position:absolute; left:0; top:6mm; bottom:6mm; width:1.3mm; border-radius:0 1mm 1mm 0; background:linear-gradient(180deg,var(--saffron),var(--gold)); }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:2mm 7mm; }
+  .field.full{ grid-column:1 / -1; }
+  .field .v{ margin-top:.8mm; font-weight:700; font-size:14pt; color:var(--navy); line-height:1.25; word-break:break-word; padding-bottom:1.2mm; border-bottom:0.3mm dashed #e4cfae; }
+  .field .v.en{ font-family:'Poppins','Hind',sans-serif; font-weight:600; font-size:13pt; }
+  .field .v.note{ font-weight:400; font-size:10.5pt; color:var(--ink); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+
+  /* ---------- Amount hero ---------- */
+  .amount{ position:relative; z-index:2; margin:3mm 14mm 0; flex-shrink:0; border-radius:4.5mm; padding:1.8mm;
+           background:linear-gradient(135deg,var(--gold),var(--saffron)); box-shadow:0 2mm 6mm rgba(242,92,5,.28); }
+  .amount .in{ border-radius:3.2mm; padding:3.4mm 7mm; color:#fff; position:relative; overflow:hidden;
+           background:radial-gradient(circle at 92% 18%, rgba(244,185,66,.38) 0, rgba(244,185,66,0) 38%), linear-gradient(135deg,var(--navy-deep),var(--navy)); }
+  .amount .in::after{ content:''; position:absolute; inset:2mm; border:0.3mm dashed rgba(244,185,66,.7); border-radius:2.2mm; pointer-events:none; }
+  .amount .top{ display:flex; justify-content:space-between; align-items:flex-end; gap:6mm; }
+  .amount .lbl .h{ color:#ffe9c2; font-size:10pt; }
+  .amount .lbl .e{ color:var(--gold); font-size:9.5pt; }
+  .amount .num{ font-family:'Poppins','Hind',sans-serif; font-weight:700; font-size:31pt; line-height:1; color:var(--gold); letter-spacing:.2mm; white-space:nowrap; }
+  .amount .num small{ font-size:17pt; color:#ffe9c2; font-weight:600; margin-left:1mm; }
+  .amount .words{ margin-top:2.8mm; padding-top:2.4mm; border-top:0.3mm solid rgba(255,255,255,.22); display:flex; flex-direction:column-reverse; }
+  .amount .words .hi{ font-family:'Tiro','Hind',serif; font-size:11.5pt; color:#ffe9c2; line-height:1.4; margin-top:.8mm; }
+  .amount .words .en{ font-family:'Poppins',sans-serif; font-weight:500; font-size:10pt; color:#fff; letter-spacing:.2mm; }
+
+  /* ---------- Thanks ---------- */
+  .thanks{ position:relative; z-index:2; text-align:center; margin:2.6mm 16mm 0; flex-shrink:0; }
+  .thanks .t-en{ font-family:'Poppins',sans-serif; font-weight:600; font-size:12.5pt; color:var(--navy); }
+  .thanks .hi1{ font-family:'Tiro','Hind',serif; font-size:12.5pt; color:var(--saffron-deep); margin-top:.3mm; }
+  .thanks .hi2{ font-size:9.5pt; color:var(--ink); margin-top:1mm; line-height:1.5; }
+  .thanks .en{ font-family:'Poppins',sans-serif; font-size:8pt; color:var(--muted); margin-top:.6mm; line-height:1.5; }
+
+  /* ---------- Signature row ---------- */
+  .sign{ position:relative; z-index:4; margin:auto 15mm 2.5mm; padding-top:1mm; display:flex; justify-content:space-between; align-items:flex-end; flex-shrink:0; }
+  .stamp{ width:23mm; height:23mm; transform:rotate(-9deg); opacity:.9; margin-bottom:-1mm; }
+  .sigbox{ width:62mm; text-align:center; }
+  .sigbox .line{ border-top:0.4mm solid var(--navy); margin-bottom:1.6mm; }
+  .sigbox .h{ font-weight:600; font-size:9pt; color:var(--muted); }
+  .sigbox .e{ font-family:'Poppins',sans-serif; font-weight:600; font-size:8.5pt; color:var(--navy); letter-spacing:.3mm; }
+  .sigbox .org{ font-family:'Hind','Poppins',sans-serif; font-size:7.6pt; color:var(--saffron-deep); margin-top:.6mm; font-weight:600; }
+
+  /* ---------- Footer ---------- */
+  .footer{ position:relative; z-index:4; flex-shrink:0; height:15mm; color:#fff; text-align:center; display:flex; flex-direction:column; justify-content:center; padding-top:2mm;
+           background:linear-gradient(180deg,var(--saffron) 0%,var(--saffron-deep) 100%); }
+  .footer .toran-top{ position:absolute; left:0; right:0; top:-0.1mm; height:4.5mm; transform:scaleY(-1); }
+  .footer .toran-top svg{ width:100%; height:100%; display:block; }
+  .footer .jai{ font-family:'Poppins','Tiro','Hind',serif; font-weight:600; font-size:12pt; color:#fff2d3; line-height:1.2; }
+  .fine{ flex:1; align-self:flex-end; text-align:center; padding:0 5mm 1mm; font-family:'Poppins',sans-serif; font-size:6.4pt; line-height:1.5; color:var(--muted); }
+  .fine b{ font-weight:500; }
+  .fine span{ display:block; font-family:'Hind',sans-serif; font-size:7.2pt; }
+  .footer .sm{ font-size:7.6pt; color:#ffe6bd; margin-top:.8mm; letter-spacing:.15mm; font-family:'Hind','Poppins',sans-serif; }
+</style>
+</head>
+<body>
+<!-- ===== Reusable SVGs ===== -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- Sun with 16 rays -->
+    <symbol id="sun" viewBox="0 0 200 200">
+      <g stroke-linecap="round">
+        <g stroke="#F25C05" stroke-width="7">
+          <line x1="100" y1="12" x2="100" y2="36"/><line x1="100" y1="164" x2="100" y2="188"/>
+          <line x1="12" y1="100" x2="36" y2="100"/><line x1="164" y1="100" x2="188" y2="100"/>
+          <line x1="38" y1="38" x2="55" y2="55"/><line x1="145" y1="145" x2="162" y2="162"/>
+          <line x1="38" y1="162" x2="55" y2="145"/><line x1="145" y1="55" x2="162" y2="38"/>
+        </g>
+        <g stroke="#F4B942" stroke-width="5">
+          <line x1="60" y1="20" x2="67" y2="39"/><line x1="140" y1="20" x2="133" y2="39"/>
+          <line x1="60" y1="180" x2="67" y2="161"/><line x1="140" y1="180" x2="133" y2="161"/>
+          <line x1="20" y1="60" x2="39" y2="67"/><line x1="20" y1="140" x2="39" y2="133"/>
+          <line x1="180" y1="60" x2="161" y2="67"/><line x1="180" y1="140" x2="161" y2="133"/>
+        </g>
+      </g>
+      <circle cx="100" cy="100" r="46" fill="#F25C05"/>
+      <circle cx="100" cy="100" r="38" fill="#F4B942"/>
+      <circle cx="100" cy="100" r="22" fill="#FFD36B"/>
+    </symbol>
+    <!-- Hanging toran / bunting -->
+    <pattern id="toran" width="30" height="24" patternUnits="userSpaceOnUse">
+      <path d="M0 0H30L15 24Z" fill="#F4B942"/>
+      <path d="M5 0H25L15 16Z" fill="#F25C05"/>
+      <circle cx="15" cy="5" r="2.2" fill="#fff6e0"/>
+    </pattern>
+    <pattern id="toran2" width="30" height="24" patternUnits="userSpaceOnUse">
+      <path d="M0 0H30L15 24Z" fill="#F4B942"/>
+      <path d="M5 0H25L15 16Z" fill="#0D3B66"/>
+      <circle cx="15" cy="5" r="2.2" fill="#F4B942"/>
+    </pattern>
+  </defs>
+</svg>
+
+<div class="page">
+  <div class="frame"></div>
+  <div class="dia tl"></div><div class="dia tr"></div><div class="dia bl"></div><div class="dia br"></div>
+
+  <div class="sheet">
+  <svg class="watermark" viewBox="0 0 200 200" fill="#0D3B66"><use href="#sun"/></svg>
+
+  <!-- ===== Header ===== -->
+  <div class="header">
+    <div class="blessing">॥ Jai Chhathi Maiya &nbsp;•&nbsp; जय छठी मैया ॥</div>
+    <div class="en-title">Chhath Puja Samiti</div>
+    <div class="hi-title">छठ पूजा समिति</div>
+    <div class="hi-place">Yogidih, Dudhari &nbsp;•&nbsp; योगीडीह, दुधारी &nbsp;•&nbsp; {{year}}</div>
+    <div class="toran"><svg preserveAspectRatio="none" viewBox="0 0 600 24"><rect width="600" height="24" fill="url(#toran2)"/></svg></div>
+  </div>
+  <div class="badge"><svg viewBox="0 0 200 200"><use href="#sun"/></svg></div>
+
+  <!-- ===== Title ===== -->
+  <div class="title">
+    <div class="en">Donation Receipt</div>
+    <div class="hi">दान रसीद</div>
+    <div class="rule"><i></i><b></b><i></i></div>
+  </div>
+
+  <!-- ===== Meta ===== -->
+  <div class="meta">
+    <div class="pill"><div class="lbl"><span class="h">रसीद संख्या</span><span class="e">Receipt No.</span></div><div class="val">#{{bill_no}}</div></div>
+    <div class="pill"><div class="lbl"><span class="h">दिनांक</span><span class="e">Date</span></div><div class="val">{{date}}</div></div>
+  </div>
+
+  <!-- ===== Donor details ===== -->
+  <div class="card">
+    <div class="grid">
+      <div class="field full">
+        <div class="lbl"><span class="h">दानदाता का नाम</span><span class="e">Donor Name</span></div>
+        <div class="v">{{donor_name}}</div>
+      </div>
+      <div class="field">
+        <div class="lbl"><span class="h">मोबाइल नंबर</span><span class="e">Phone Number</span></div>
+        <div class="v en">{{phone}}</div>
+      </div>
+      <div class="field">
+        <div class="lbl"><span class="h">भुगतान का माध्यम</span><span class="e">Payment Mode</span></div>
+        <div class="v en">{{mode_en}} <span style="font-family:'Hind',sans-serif;font-weight:600;font-size:11pt;color:var(--saffron-deep)">/ {{mode_hi}}</span></div>
+      </div>
+      {{#note}}
+      <div class="field full">
+        <div class="lbl"><span class="h">टिप्पणी</span><span class="e">Note</span></div>
+        <div class="v note">{{note}}</div>
+      </div>
+      {{/note}}
+    </div>
+  </div>
+
+  <!-- ===== Amount ===== -->
+  <div class="amount"><div class="in">
+    <div class="top">
+      <div class="lbl"><span class="h">दान राशि</span><span class="e">Donation Amount</span></div>
+      <div class="num">₹ {{amount}}<small>/-</small></div>
+    </div>
+    <div class="words">
+      <div class="hi">रुपये {{amount_words_hi}} मात्र</div>
+      <div class="en">Rupees {{amount_words_en}} Only</div>
+    </div>
+  </div></div>
+
+  <!-- ===== Thanks ===== -->
+  <div class="thanks">
+    <div class="t-en">Thank you for your generous support!</div>
+    <div class="hi1">आपके सहयोग के लिए हार्दिक धन्यवाद!</div>
+    <div class="en">May Chhathi Maiya bless you and your family with health, happiness &amp; prosperity.</div>
+    <div class="hi2">छठी मैया आपको एवं आपके परिवार को सुख, समृद्धि और स्वास्थ्य का आशीर्वाद दें।</div>
+  </div>
+
+  <!-- ===== Stamp + signature ===== -->
+  <div class="sign">
+    <svg class="stamp" viewBox="0 0 200 200">
+      <defs><path id="ring" d="M100,100 m-72,0 a72,72 0 1,1 144,0 a72,72 0 1,1 -144,0"/></defs>
+      <circle cx="100" cy="100" r="94" fill="none" stroke="#1d4f91" stroke-width="4"/>
+      <circle cx="100" cy="100" r="88" fill="none" stroke="#1d4f91" stroke-width="1.4"/>
+      <circle cx="100" cy="100" r="52" fill="none" stroke="#1d4f91" stroke-width="2"/>
+      <text font-family="Poppins, Hind" font-weight="700" font-size="12" fill="#1d4f91" letter-spacing=".6">
+        <textPath href="#ring" startOffset="0">• CHHATH PUJA SAMITI • छठ पूजा समिति • {{year}} •</textPath>
+      </text>
+      <text x="100" y="100" text-anchor="middle" font-family="Poppins" font-weight="700" font-size="17" fill="#1d4f91" letter-spacing="1.5">PAID</text>
+      <text x="100" y="124" text-anchor="middle" font-family="Tiro, Hind" font-size="22" fill="#1d4f91">प्राप्त</text>
+    </svg>
+    <div class="fine"><b>This is a computer-generated receipt</b><span>यह कंप्यूटर द्वारा तैयार की गई रसीद है</span></div>
+    <div class="sigbox">
+      <div class="line"></div>
+      <div class="e">Authorized Signatory</div>
+      <div class="h">अधिकृत हस्ताक्षर</div>
+      <div class="org">Chhath Puja Samiti &nbsp;•&nbsp; छठ पूजा समिति</div>
+    </div>
+  </div>
+
+  <!-- ===== Footer ===== -->
+  <div class="footer">
+    <div class="toran-top"><svg preserveAspectRatio="none" viewBox="0 0 600 24"><rect width="600" height="24" fill="url(#toran)"/></svg></div>
+    <div class="jai">Jai Chhathi Maiya! &nbsp;•&nbsp; जय छठी मैया!</div>
+  </div>
+  </div><!-- /.sheet -->
+</div>
+</body>
+</html>

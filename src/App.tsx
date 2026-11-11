@@ -407,6 +407,11 @@ function Donate({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [customAmount, setCustomAmount] = useState(false);
+  const [clientId] = useState(() => {
+    return typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `c_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  });
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -420,14 +425,14 @@ function Donate({
     setLoading(true);
     try {
       const created = await api.createDonation({
-        name: name.trim(),
+        donorName: name.trim(),
         phone: phone.replace(/\D/g, ""),
         amount: Number(amount),
-        mode,
-        reference_no: referenceNo.trim() || undefined,
+        paymentMode: mode,
         note: note.trim() || undefined,
+        clientId,
       });
-      showToast(`Receipt ${created.bill} generated successfully!`);
+      showToast(`Receipt #${created.billNo || created.bill} generated successfully!`);
       onComplete(created);
     } catch (err: any) {
       showToast(err.message || "Failed to create donation");
@@ -599,22 +604,75 @@ function Receipt({
   onHome: () => void;
   showToast: (text: string) => void;
 }) {
-  const shareWhatsApp = () => {
-    const cleanPhone = donation.phone.replace(/\D/g, "");
-    const msg = `🙏 *Greetings from Chhath Puja Samiti (Yogidih, Dudhari · 2026)*\n\nDear *${donation.name}*,\nWe gratefully acknowledge receipt of your donation of *₹${donation.amount.toLocaleString("en-IN")}* for Chhath Puja 2026.\n\n📜 *Bill Number:* ${donation.bill}\n📅 *Date & Time:* ${donation.date}, ${donation.time}\n💳 *Payment Mode:* ${donation.mode}${donation.reference_no ? ` (${donation.reference_no})` : ""}\n\nMay Chhath Maiya and Lord Bhaskar shower their divine blessings upon you and your family! ✨`;
-    const url = `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(msg)}`;
-    window.open(url, "_blank");
-    showToast("Opening WhatsApp…");
+  const [sharing, setSharing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const billNumber = donation.billNo || donation.bill;
+  const donorName = donation.donorName || donation.name;
+  const bilingualMessage = `नमस्ते ${donorName} जी, छठ पूजा समिति को आपके ₹${donation.amount} के दान के लिए धन्यवाद। रसीद संख्या #${billNumber}. Thank you for your donation of ₹${donation.amount} to Chhath Puja Samiti. Receipt: ${donation.shareUrl}. जय छठी मैया!`;
+
+  const shareWhatsApp = async () => {
+    setSharing(true);
+    try {
+      // 1) Primary (mobile): Web Share API Level 2 with attached PDF file
+      if (typeof navigator !== "undefined" && navigator.share && navigator.canShare) {
+        try {
+          showToast("Preparing PDF for WhatsApp…");
+          const res = await fetch(donation.pdfUrl);
+          const blob = await res.blob();
+          const file = new File([blob], `receipt_${billNumber}.pdf`, { type: "application/pdf" });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: `Donation Receipt #${billNumber}`,
+              text: bilingualMessage,
+            });
+            showToast("Receipt shared on WhatsApp!");
+            setSharing(false);
+            return;
+          }
+        } catch (shareErr: any) {
+          if (shareErr.name === "AbortError") {
+            setSharing(false);
+            return;
+          }
+          console.warn("navigator.share with files unsupported, falling back to wa.me:", shareErr);
+        }
+      }
+
+      // 2) Fallback (desktop / unsupported browsers): wa.me link with bilingual message
+      const cleanPhone = (donation.phone || "").replace(/\D/g, "");
+      const waUrl = `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(bilingualMessage)}`;
+      window.open(waUrl, "_blank");
+      showToast("Opening WhatsApp with receipt…");
+    } finally {
+      setSharing(false);
+    }
   };
 
-  const handlePrint = () => {
-    window.print();
-    showToast("Receipt sent to printer");
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      showToast("Downloading official receipt PDF…");
+      const res = await fetch(donation.pdfUrl);
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `receipt_${billNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(donation.pdfUrl, "_blank");
+    } finally {
+      setDownloading(false);
+    }
   };
 
-  const handleDownload = () => {
-    window.print();
-    showToast("Select 'Save as PDF' in print dialog");
+  const handleOpenPdf = () => {
+    window.open(donation.pdfUrl, "_blank");
   };
 
   return (
@@ -647,12 +705,12 @@ function Receipt({
           </div>
           <div className="receipt-number">
             <span>Bill number</span>
-            <strong>{donation.bill}</strong>
+            <strong>{billNumber}</strong>
           </div>
           <dl className="receipt-details">
             <div>
               <dt>Donor name</dt>
-              <dd>{donation.name}</dd>
+              <dd>{donorName}</dd>
             </div>
             <div>
               <dt>Phone</dt>
@@ -667,15 +725,9 @@ function Receipt({
             <div>
               <dt>Payment mode</dt>
               <dd>
-                <ModeBadge mode={donation.mode} />
+                <ModeBadge mode={donation.paymentMode || donation.mode} />
               </dd>
             </div>
-            {donation.reference_no && (
-              <div>
-                <dt>Reference No.</dt>
-                <dd style={{ fontSize: "11px", fontWeight: "600" }}>{donation.reference_no}</dd>
-              </div>
-            )}
             {donation.note && (
               <div style={{ gridColumn: "1 / -1" }}>
                 <dt>Note / Seva</dt>
@@ -690,7 +742,7 @@ function Receipt({
           </div>
           <div className="signature-row">
             <div>
-              <span className="signature">{donation.collector_name || "A. Prasad"}</span>
+              <span className="signature">A. Prasad</span>
               <small>Authorized signature</small>
             </div>
             <div className="stamp">
@@ -702,18 +754,18 @@ function Receipt({
           <p className="blessing">Jai Chhath Maiya!</p>
         </article>
         <div className="receipt-actions">
-          <button className="primary-button" onClick={handleDownload}>
+          <button className="primary-button" onClick={handleDownload} disabled={downloading}>
             <Icon name="download" size={19} />
-            Download PDF
+            {downloading ? "Downloading…" : "Download PDF"}
           </button>
           <div>
-            <button className="secondary-button whatsapp" onClick={shareWhatsApp}>
+            <button className="secondary-button whatsapp" onClick={shareWhatsApp} disabled={sharing}>
               <Icon name="share" size={18} />
-              WhatsApp
+              {sharing ? "Sharing…" : "Share on WhatsApp"}
             </button>
-            <button className="secondary-button" onClick={handlePrint}>
-              <Icon name="print" size={18} />
-              Print
+            <button className="secondary-button" onClick={handleOpenPdf}>
+              <Icon name="file" size={18} />
+              Open PDF
             </button>
           </div>
           <button className="ghost-button" onClick={onNew}>
@@ -1062,6 +1114,7 @@ function Records({
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Donation[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [serverTotalAmount, setServerTotalAmount] = useState(0);
   const [showReconcile, setShowReconcile] = useState(false);
 
   const loadData = async () => {
@@ -1073,6 +1126,7 @@ function Records({
       });
       setItems(res.items);
       setTotalCount(res.total);
+      setServerTotalAmount(res.totalAmount);
     } catch (err: any) {
       showToast(err.message || "Failed to load records");
     } finally {
@@ -1087,7 +1141,9 @@ function Records({
     return () => clearTimeout(handler);
   }, [filter, query]);
 
-  const total = useMemo(() => items.reduce((sum, item) => sum + item.amount, 0), [items]);
+  const total = useMemo(() => {
+    return serverTotalAmount > 0 ? serverTotalAmount : items.reduce((sum, item) => sum + item.amount, 0);
+  }, [serverTotalAmount, items]);
 
   const handleExportCsv = () => {
     window.location.href = api.getCsvExportUrl();
@@ -1408,13 +1464,12 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
 }
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(false);
   const [screen, setScreen] = useState<Screen>("home");
   const [recordsUnlocked, setRecordsUnlocked] = useState(false);
   const [pinGate, setPinGate] = useState(false);
   const [latestDonation, setLatestDonation] = useState<Donation | null>(null);
-  const [stats, setStats] = useState<Stats | null>(() => api.getCachedStats());
-  const [recentDonations, setRecentDonations] = useState<Donation[]>(() => api.getCachedDonations() || []);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [recentDonations, setRecentDonations] = useState<Donation[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -1425,14 +1480,16 @@ export default function App() {
 
   const refreshDashboard = async () => {
     try {
-      const [s, d] = await Promise.all([
-        api.getStats(),
-        api.getDonations({ limit: 5 }),
-      ]);
+      const s = await api.getStats();
       setStats(s);
-      setRecentDonations(d.items);
-      if (!latestDonation && d.items.length > 0) {
-        setLatestDonation(d.items[0]);
+      if (recordsUnlocked) {
+        try {
+          const d = await api.getDonations({ limit: 5 });
+          setRecentDonations(d.items);
+          if (!latestDonation && d.items.length > 0) {
+            setLatestDonation(d.items[0]);
+          }
+        } catch {}
       }
     } catch (err) {
       console.error("Dashboard refresh error:", err);
@@ -1442,11 +1499,18 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (authenticated) {
-      if (!stats) setDashboardLoading(true);
+    api.checkAdminAuth().then((isAuthed) => {
+      if (isAuthed) setRecordsUnlocked(true);
+    });
+    setDashboardLoading(true);
+    refreshDashboard();
+  }, []);
+
+  useEffect(() => {
+    if (recordsUnlocked) {
       refreshDashboard();
     }
-  }, [authenticated]);
+  }, [recordsUnlocked]);
 
   const navigate = (next: Screen) => {
     if (next === "records" && !recordsUnlocked) {
@@ -1473,19 +1537,6 @@ export default function App() {
   };
 
   const appClass = useMemo(() => `app-shell screen-${screen}`, [screen]);
-
-  if (!authenticated)
-    return (
-      <div className="app-frame">
-        <PinGate
-          appEntry
-          unlock={() => {
-            setAuthenticated(true);
-            setRecordsUnlocked(true);
-          }}
-        />
-      </div>
-    );
 
   if (pinGate)
     return (
