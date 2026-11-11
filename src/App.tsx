@@ -664,16 +664,25 @@ function Receipt({
 }) {
   const [pdfLanguage, setPdfLanguage] = useState<"en" | "hi">("en");
   const [sharing, setSharing] = useState(false);
-  const [downloading, setDownloading] = useState(false);
 
   const billNumber = donation.billNo || donation.bill;
   const donorName = donation.donorName || donation.name;
   const withLanguage = (url: string) => `${url}${url.includes("?") ? "&" : "?"}lang=${pdfLanguage}`;
   const receiptUrl = withLanguage(donation.shareUrl || donation.pdfUrl);
   const pdfUrl = withLanguage(donation.pdfUrl);
+  const downloadPdfUrl = `${pdfUrl}&download=1`;
   const shareMessage = pdfLanguage === "hi"
     ? `नमस्ते ${donorName}, छठ पूजा समिति को ₹${donation.amount} के दान के लिए धन्यवाद। रसीद संख्या #${billNumber}: ${receiptUrl}`
     : `Hello ${donorName}, thank you for your donation of INR ${donation.amount} to Chhath Puja Samiti. Receipt #${billNumber}: ${receiptUrl}`;
+
+  const startPdfDownload = () => {
+    const link = document.createElement("a");
+    link.href = downloadPdfUrl;
+    link.download = `receipt_${billNumber}_${pdfLanguage}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
 
   const shareWhatsApp = async () => {
     setSharing(true);
@@ -709,47 +718,16 @@ function Receipt({
         }
       }
 
-      // 2) Fallback (desktop / unsupported browsers): wa.me link with English message
+      // WhatsApp web links cannot attach files, so download the selected PDF as well.
       const waUrl = `https://wa.me/?text=${encodeURIComponent(shareMessage)}`;
+      startPdfDownload();
       window.open(waUrl, "_blank");
-      showToast("WhatsApp opened with the receipt link");
+      showToast("PDF download started; attach it in WhatsApp if it is not attached automatically.");
     } catch (error) {
       console.error("Receipt sharing failed:", error);
       showToast("Could not share the receipt. Please download the PDF and try again.");
     } finally {
       setSharing(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      showToast("Downloading receipt PDF…");
-      const res = await fetch(pdfUrl);
-      if (!res.ok) {
-        throw new Error("Could not download PDF");
-      }
-      const contentType = res.headers.get("content-type") || "";
-      if (contentType.toLowerCase().includes("application/pdf")) {
-        const blob = await res.blob();
-        const blobUrl = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = blobUrl;
-        a.download = `receipt_${billNumber}_${pdfLanguage}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        // Delay URL revocation so the browser has time to stream the blob to disk
-        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
-        showToast("PDF downloaded successfully!");
-      } else {
-        throw new Error("The server returned a printable page instead of a PDF");
-      }
-    } catch (error) {
-      console.error("Receipt download failed:", error);
-      showToast("PDF download failed. Use Open PDF to print or save the receipt.");
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -840,10 +818,15 @@ function Receipt({
             <button type="button" className={pdfLanguage === "en" ? "selected" : ""} aria-pressed={pdfLanguage === "en"} onClick={() => setPdfLanguage("en")}>English PDF</button>
             <button type="button" className={pdfLanguage === "hi" ? "selected" : ""} aria-pressed={pdfLanguage === "hi"} onClick={() => setPdfLanguage("hi")}>हिंदी PDF</button>
           </div>
-          <button className="primary-button" onClick={handleDownload} disabled={downloading}>
+          <a
+            className="primary-button"
+            href={downloadPdfUrl}
+            download={`receipt_${billNumber}_${pdfLanguage}.pdf`}
+            onClick={() => showToast("Starting PDF download…")}
+          >
             <Icon name="download" size={19} />
-            {downloading ? "Downloading…" : `Download ${pdfLanguage === "hi" ? "Hindi" : "English"} PDF`}
-          </button>
+            Download {pdfLanguage === "hi" ? "Hindi" : "English"} PDF
+          </a>
           <div>
             <button className="secondary-button whatsapp" onClick={shareWhatsApp} disabled={sharing}>
               <Icon name="share" size={18} />

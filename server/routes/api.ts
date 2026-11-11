@@ -370,7 +370,8 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
 
     if (fs.existsSync(targetPdfPath)) {
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}_${language}.pdf"`);
+      const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+      res.setHeader('Content-Disposition', `${disposition}; filename="receipt_${donation.billNo}_${language}.pdf"`);
       fs.createReadStream(targetPdfPath).pipe(res);
       return;
     }

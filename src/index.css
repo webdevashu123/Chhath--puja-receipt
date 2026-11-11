@@ -712,6 +712,7 @@
   width: 100%;
   border: 0;
   color: white;
+  text-decoration: none;
   background: linear-gradient(135deg, var(--color-saffron), #ee7815);
   box-shadow: 0 8px 18px rgba(242, 92, 5, 0.2);
 }
