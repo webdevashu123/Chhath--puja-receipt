@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer';
 
-const TEMPLATE_PATH = path.resolve(process.cwd(), 'server/pdf/receipt.html');
-const FONT_DIR = path.resolve(process.cwd(), 'server/pdf/fonts');
-const RECEIPTS_DIR = path.resolve(process.cwd(), 'data/receipts');
+const ROOT_DIR = path.resolve(import.meta.dirname, '../..');
+const TEMPLATE_PATH = path.resolve(import.meta.dirname, '../pdf/receipt.html');
+const FONT_DIR = path.resolve(import.meta.dirname, '../pdf/fonts');
+const RECEIPTS_DIR = path.resolve(ROOT_DIR, 'data/receipts');
 
 if (!fs.existsSync(RECEIPTS_DIR)) {
   fs.mkdirSync(RECEIPTS_DIR, { recursive: true });
@@ -124,6 +125,24 @@ export function fillTemplate(d: ReceiptData): string {
   return html.replace(/\{\{(\w+)\}\}/g, (_, k) => (k in vals ? vals[k] : ''));
 }
 
+/**
+ * Returns printable self-contained HTML with embedded fonts and automatic print trigger.
+ */
+export function renderPrintableReceiptHTML(data: ReceiptData): string {
+  const html = fillTemplate(data);
+  const autoPrintScript = `
+<script>
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      try { window.print(); } catch(e) {}
+    }, 350);
+  });
+</script>
+</body>
+</html>`;
+  return html.replace(/<\/body>\s*<\/html>/i, autoPrintScript);
+}
+
 // ---------- Concurrency Queue (Max 2 concurrent renders) ----------
 class RenderQueue {
   private activeCount = 0;
@@ -153,15 +172,52 @@ const renderQueue = new RenderQueue(2);
 let browserInstance: Browser | null = null;
 let browserPromise: Promise<Browser> | null = null;
 
+function detectChromeExecutable(): string | undefined {
+  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+    return process.env.CHROME_PATH;
+  }
+  if (process.platform === 'linux') {
+    const candidates = [
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
+    }
+  } else if (process.platform === 'win32') {
+    const candidates = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
+    }
+  }
+  return undefined;
+}
+
 async function launchBrowser(): Promise<Browser> {
+  const executablePath = detectChromeExecutable();
+  const launchArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--no-first-run',
+    '--no-zygote',
+    '--disable-extensions',
+    '--hide-scrollbars',
+    '--mute-audio',
+  ];
+
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: process.env.CHROME_PATH || undefined,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-    ],
+    executablePath,
+    args: launchArgs,
   });
 
   browser.on('disconnected', () => {
@@ -203,8 +259,13 @@ export async function renderReceiptPDF(data: ReceiptData): Promise<Buffer> {
       const browser = await getBrowser();
       const page = await browser.newPage();
       try {
-        await page.setContent(html, { waitUntil: 'load', timeout: 30000 });
-        await page.evaluate(() => (document as any).fonts?.ready);
+        await page.setContent(html, { waitUntil: 'load', timeout: 20000 }).catch(async () => {
+          await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        });
+        await Promise.race([
+          page.evaluate(() => (document as any).fonts?.ready),
+          new Promise((resolve) => setTimeout(resolve, 2000)),
+        ]);
         const uint8 = await page.pdf({
           format: 'A4',
           printBackground: true,

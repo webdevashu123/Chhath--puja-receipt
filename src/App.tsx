@@ -659,17 +659,22 @@ function Receipt({
         try {
           showToast("Preparing PDF for WhatsApp…");
           const res = await fetch(donation.pdfUrl);
-          const blob = await res.blob();
-          const file = new File([blob], `receipt_${billNumber}.pdf`, { type: "application/pdf" });
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: `Donation Receipt #${billNumber}`,
-              text: bilingualMessage,
-            });
-            showToast("Receipt shared on WhatsApp!");
-            setSharing(false);
-            return;
+          if (res.ok) {
+            const contentType = res.headers.get("content-type") || "";
+            if (contentType.includes("application/pdf")) {
+              const blob = await res.blob();
+              const file = new File([blob], `receipt_${billNumber}.pdf`, { type: "application/pdf" });
+              if (navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                  files: [file],
+                  title: `Donation Receipt #${billNumber}`,
+                  text: bilingualMessage,
+                });
+                showToast("Receipt shared on WhatsApp!");
+                setSharing(false);
+                return;
+              }
+            }
           }
         } catch (shareErr: any) {
           if (shareErr.name === "AbortError") {
@@ -695,15 +700,26 @@ function Receipt({
     try {
       showToast("Downloading official receipt PDF…");
       const res = await fetch(donation.pdfUrl);
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = `receipt_${billNumber}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(blobUrl);
+      if (!res.ok) {
+        throw new Error("Could not download PDF");
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/pdf")) {
+        const blob = await res.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = `receipt_${billNumber}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Delay URL revocation so the browser has time to stream the blob to disk
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
+        showToast("PDF downloaded successfully!");
+      } else {
+        // Fallback: If printable HTML is served, open in new tab for direct print/save
+        window.open(donation.pdfUrl, "_blank");
+      }
     } catch {
       window.open(donation.pdfUrl, "_blank");
     } finally {
@@ -713,6 +729,10 @@ function Receipt({
 
   const handleOpenPdf = () => {
     window.open(donation.pdfUrl, "_blank");
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   return (
@@ -808,6 +828,10 @@ function Receipt({
               Open PDF
             </button>
           </div>
+          <button className="secondary-button" onClick={handlePrint} style={{ width: "100%", justifyContent: "center" }}>
+            <Icon name="print" size={18} />
+            Print Receipt
+          </button>
           <button className="ghost-button" onClick={onNew}>
             <Icon name="plus" size={18} />
             New Donation

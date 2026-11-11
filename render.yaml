@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: chhath-puja-receipt
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_PIN_HASH
+        value: $2b$10$tAsGY5oFYr7ehZKA8HTVN.EBBudbBjpH5Aom1eiUzEnyojhO/iWYi
+      - key: JWT_SECRET
+        generateValue: true
+      - key: WHATSAPP_CLOUD_ENABLED
+        value: "false"

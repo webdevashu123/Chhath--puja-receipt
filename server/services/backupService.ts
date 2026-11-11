@@ -3,7 +3,7 @@ import path from 'node:path';
 import cron from 'node-cron';
 import db, { dbPath } from '../db/database.ts';
 
-const BACKUP_DIR = path.resolve(process.cwd(), 'data/backups');
+const BACKUP_DIR = path.resolve(import.meta.dirname, '../../data/backups');
 const MAX_BACKUPS = 14;
 
 export async function performBackup(): Promise<string | null> {

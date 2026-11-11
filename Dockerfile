@@ -27,13 +27,16 @@ WORKDIR /app
 
 # Install package dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev || npm install --omit=dev
+RUN npm install
 
 # Copy application source code
 COPY . .
 
 # Build Vite frontend for production
-RUN npx vite build
+RUN npm run build
+
+# Prune devDependencies to keep container lean
+RUN npm prune --omit=dev
 
 # Create and persist data directories
 RUN mkdir -p data/receipts data/backups

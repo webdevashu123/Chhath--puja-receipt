@@ -13,7 +13,7 @@ import db, { initDatabase } from './db/database.ts';
 import apiRouter from './routes/api.ts';
 import { apiRateLimiter } from './middleware/auth.ts';
 import { initBackupScheduler } from './services/backupService.ts';
-import { getReceiptPath, saveReceiptPDF } from './services/pdfService.ts';
+import { getReceiptPath, saveReceiptPDF, renderPrintableReceiptHTML } from './services/pdfService.ts';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -88,21 +88,41 @@ app.get('/r/:token', async (req: Request, res: Response) => {
 
     // Regenerate if file missing on disk
     if (!fs.existsSync(targetPdfPath)) {
-      console.log(`[Public Share] PDF missing for bill #${donation.billNo}. Regenerating...`);
-      await saveReceiptPDF({
-        billNo: donation.billNo,
-        donorName: donation.donorName,
-        phone: donation.phone,
-        amount: donation.amount,
-        paymentMode: donation.paymentMode,
-        note: donation.note,
-        date: donation.createdAt,
-      });
+      try {
+        console.log(`[Public Share] PDF missing for bill #${donation.billNo}. Regenerating...`);
+        await saveReceiptPDF({
+          billNo: donation.billNo,
+          donorName: donation.donorName,
+          phone: donation.phone,
+          amount: donation.amount,
+          paymentMode: donation.paymentMode,
+          note: donation.note,
+          date: donation.createdAt,
+        });
+      } catch (genErr) {
+        console.warn(`[Public Share] PDF render unavailable, serving printable HTML receipt:`, genErr);
+      }
     }
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}.pdf"`);
-    fs.createReadStream(targetPdfPath).pipe(res);
+    if (fs.existsSync(targetPdfPath)) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}.pdf"`);
+      fs.createReadStream(targetPdfPath).pipe(res);
+      return;
+    }
+
+    // High-res printable HTML fallback with embedded Indic fonts & auto-print trigger
+    const html = renderPrintableReceiptHTML({
+      billNo: donation.billNo,
+      donorName: donation.donorName,
+      phone: donation.phone,
+      amount: donation.amount,
+      paymentMode: donation.paymentMode,
+      note: donation.note,
+      date: donation.createdAt,
+    });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   } catch (error) {
     console.error('[Public Share Error]:', error);
     res.status(500).send('Error loading receipt');
@@ -110,7 +130,7 @@ app.get('/r/:token', async (req: Request, res: Response) => {
 });
 
 // Serve frontend build from ../dist if available
-const distPath = path.resolve(process.cwd(), 'dist');
+const distPath = path.resolve(import.meta.dirname, '../dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath, {
     maxAge: '1d',

@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import db, { getNextBillNo, findOrCreateDonor, normalizeName } from '../db/database.ts';
-import { saveReceiptPDF, getReceiptPath } from '../services/pdfService.ts';
+import { saveReceiptPDF, getReceiptPath, renderPrintableReceiptHTML } from '../services/pdfService.ts';
 import { requireAdminAuth, generateAdminToken, loginRateLimiter } from '../middleware/auth.ts';
 import { sendWhatsAppReceiptCloud } from '../services/whatsappService.ts';
 
@@ -182,26 +182,34 @@ router.post('/donations', async (req: Request, res: Response) => {
     const { id, billNo, donor } = insertResult;
     const shareUrl = `${publicBaseUrl}/r/${shareToken}`;
 
-    // Generate and persist receipt PDF
-    const pdfPath = await saveReceiptPDF({
-      billNo,
-      donorName: donor.nameOnReceipt,
-      phone: donor.phone,
-      amount,
-      paymentMode,
-      note,
-      date: new Date(),
-    });
+    // Generate and persist receipt PDF safely
+    let pdfPath: string | null = null;
+    try {
+      pdfPath = await saveReceiptPDF({
+        billNo,
+        donorName: donor.nameOnReceipt,
+        phone: donor.phone,
+        amount,
+        paymentMode,
+        note,
+        date: new Date(),
+      });
+    } catch (pdfErr) {
+      console.warn(`[Donation Create] Pre-render PDF notice for bill #${billNo}:`, pdfErr);
+      // The donation is safely saved in SQLite. PDF will be generated on demand.
+    }
 
     // Optional WhatsApp Cloud API message send
-    sendWhatsAppReceiptCloud({
-      phone: donor.phone,
-      name: donor.nameOnReceipt,
-      amount,
-      billNo,
-      shareUrl,
-      pdfPath,
-    }).catch((e) => console.warn('[WhatsApp Cloud Background]:', e));
+    if (pdfPath) {
+      sendWhatsAppReceiptCloud({
+        phone: donor.phone,
+        name: donor.nameOnReceipt,
+        amount,
+        billNo,
+        shareUrl,
+        pdfPath,
+      }).catch((e) => console.warn('[WhatsApp Cloud Background]:', e));
+    }
 
     res.status(201).json({
       id,
@@ -344,24 +352,90 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
 
     // If file missing on disk, regenerate on-the-fly
     if (!fs.existsSync(targetPdfPath)) {
-      console.log(`[Receipt] PDF missing on disk for bill #${donation.billNo}. Regenerating...`);
-      await saveReceiptPDF({
-        billNo: donation.billNo,
-        donorName: donation.donorName,
-        phone: donation.phone,
-        amount: donation.amount,
-        paymentMode: donation.paymentMode,
-        note: donation.note,
-        date: donation.createdAt,
-      });
+      try {
+        console.log(`[Receipt] PDF missing on disk for bill #${donation.billNo}. Regenerating...`);
+        await saveReceiptPDF({
+          billNo: donation.billNo,
+          donorName: donation.donorName,
+          phone: donation.phone,
+          amount: donation.amount,
+          paymentMode: donation.paymentMode,
+          note: donation.note,
+          date: donation.createdAt,
+        });
+      } catch (genErr) {
+        console.warn(`[Receipt] PDF generation notice for bill #${donation.billNo}:`, genErr);
+      }
     }
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}.pdf"`);
-    fs.createReadStream(targetPdfPath).pipe(res);
+    if (fs.existsSync(targetPdfPath)) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}.pdf"`);
+      fs.createReadStream(targetPdfPath).pipe(res);
+      return;
+    }
+
+    // High-fidelity printable HTML fallback with embedded Indic fonts & auto-print trigger
+    const html = renderPrintableReceiptHTML({
+      billNo: donation.billNo,
+      donorName: donation.donorName,
+      phone: donation.phone,
+      amount: donation.amount,
+      paymentMode: donation.paymentMode,
+      note: donation.note,
+      date: donation.createdAt,
+    });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   } catch (error) {
     console.error('[Receipt PDF Error]:', error);
     res.status(500).json({ error: 'Could not stream receipt PDF' });
+  }
+});
+
+router.get('/donations/:id/receipt.html', (req: Request, res: Response) => {
+  try {
+    const donationId = parseInt(req.params.id, 10);
+    if (!donationId) {
+      res.status(400).send('Invalid donation ID');
+      return;
+    }
+
+    const donation = db.prepare(`
+      SELECT 
+        donations.id,
+        donations.bill_no as billNo,
+        donations.name_on_receipt as donorName,
+        donations.amount,
+        donations.payment_mode as paymentMode,
+        donations.note,
+        donations.created_at as createdAt,
+        donations.deleted_at as deletedAt,
+        donors.phone
+      FROM donations
+      JOIN donors ON donations.donor_id = donors.id
+      WHERE donations.id = ?
+    `).get(donationId) as any;
+
+    if (!donation || donation.deletedAt) {
+      res.status(404).send('Receipt not found');
+      return;
+    }
+
+    const html = renderPrintableReceiptHTML({
+      billNo: donation.billNo,
+      donorName: donation.donorName,
+      phone: donation.phone,
+      amount: donation.amount,
+      paymentMode: donation.paymentMode,
+      note: donation.note,
+      date: donation.createdAt,
+    });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (error) {
+    console.error('[Receipt HTML Error]:', error);
+    res.status(500).send('Could not render receipt HTML');
   }
 });
 
