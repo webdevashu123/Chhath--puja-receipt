@@ -162,10 +162,12 @@ function TopBar({
   title = "Chhath Puja Samiti",
   back,
   onBack,
+  onLock,
 }: {
   title?: string;
   back?: boolean;
   onBack?: () => void;
+  onLock?: () => void;
 }) {
   return (
     <header className="top-bar">
@@ -183,7 +185,19 @@ function TopBar({
         <strong>{title}</strong>
         <span>Yogidih, Dudhari · 2026</span>
       </div>
-      <span className="year-pill">2026</span>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        {onLock && (
+          <button
+            className="icon-button"
+            onClick={onLock}
+            title="Lock app"
+            style={{ color: "var(--color-gold)", padding: "4px" }}
+          >
+            <Icon name="lock" size={18} />
+          </button>
+        )}
+        <span className="year-pill">2026</span>
+      </div>
     </header>
   );
 }
@@ -242,6 +256,7 @@ function Home({
   goDonate,
   goRecords,
   onSelectDonation,
+  onLock,
 }: {
   stats: Stats | null;
   recentDonations: Donation[];
@@ -249,6 +264,7 @@ function Home({
   goDonate: () => void;
   goRecords: () => void;
   onSelectDonation: (donation: Donation) => void;
+  onLock?: () => void;
 }) {
   const total = stats?.totalCollected ?? 0;
   const target = stats?.targetGoal ?? 251000;
@@ -268,7 +284,7 @@ function Home({
 
   return (
     <>
-      <TopBar />
+      <TopBar onLock={onLock} />
       <main className="screen-content home-screen">
         <section className="hero-card">
           <div className="hero-orb orb-one" />
@@ -394,9 +410,11 @@ function Home({
 function Donate({
   onComplete,
   showToast,
+  onLock,
 }: {
   onComplete: (donation: Donation) => void;
   showToast: (text: string) => void;
+  onLock?: () => void;
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -649,7 +667,8 @@ function Receipt({
 
   const billNumber = donation.billNo || donation.bill;
   const donorName = donation.donorName || donation.name;
-  const bilingualMessage = `नमस्ते ${donorName} जी, छठ पूजा समिति को आपके ₹${donation.amount} के दान के लिए धन्यवाद। रसीद संख्या #${billNumber}. Thank you for your donation of ₹${donation.amount} to Chhath Puja Samiti. Receipt: ${donation.shareUrl}. जय छठी मैया!`;
+  const receiptUrl = donation.shareUrl || donation.pdfUrl;
+  const shareMessage = `Hello ${donorName}, thank you for your donation of INR ${donation.amount} to Chhath Puja Samiti. Receipt #${billNumber}: ${receiptUrl}`;
 
   const shareWhatsApp = async () => {
     setSharing(true);
@@ -657,20 +676,20 @@ function Receipt({
       // 1) Primary (mobile): Web Share API Level 2 with attached PDF file
       if (typeof navigator !== "undefined" && navigator.share && navigator.canShare) {
         try {
-          showToast("Preparing PDF for WhatsApp…");
+          showToast("Preparing PDF for sharing…");
           const res = await fetch(donation.pdfUrl);
           if (res.ok) {
             const contentType = res.headers.get("content-type") || "";
-            if (contentType.includes("application/pdf")) {
+            if (contentType.toLowerCase().includes("application/pdf")) {
               const blob = await res.blob();
               const file = new File([blob], `receipt_${billNumber}.pdf`, { type: "application/pdf" });
               if (navigator.canShare({ files: [file] })) {
                 await navigator.share({
                   files: [file],
                   title: `Donation Receipt #${billNumber}`,
-                  text: bilingualMessage,
+                  text: shareMessage,
                 });
-                showToast("Receipt shared on WhatsApp!");
+                showToast("Receipt shared");
                 setSharing(false);
                 return;
               }
@@ -681,15 +700,17 @@ function Receipt({
             setSharing(false);
             return;
           }
-          console.warn("navigator.share with files unsupported, falling back to wa.me:", shareErr);
+          console.warn("File sharing unavailable; opening WhatsApp link:", shareErr);
         }
       }
 
-      // 2) Fallback (desktop / unsupported browsers): wa.me link with bilingual message
-      const cleanPhone = (donation.phone || "").replace(/\D/g, "");
-      const waUrl = `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(bilingualMessage)}`;
+      // 2) Fallback (desktop / unsupported browsers): wa.me link with English message
+      const waUrl = `https://wa.me/?text=${encodeURIComponent(shareMessage)}`;
       window.open(waUrl, "_blank");
-      showToast("Opening WhatsApp with receipt…");
+      showToast("WhatsApp opened with the receipt link");
+    } catch (error) {
+      console.error("Receipt sharing failed:", error);
+      showToast("Could not share the receipt. Please download the PDF and try again.");
     } finally {
       setSharing(false);
     }
@@ -698,13 +719,13 @@ function Receipt({
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      showToast("Downloading official receipt PDF…");
+      showToast("Downloading receipt PDF…");
       const res = await fetch(donation.pdfUrl);
       if (!res.ok) {
         throw new Error("Could not download PDF");
       }
       const contentType = res.headers.get("content-type") || "";
-      if (contentType.includes("application/pdf")) {
+      if (contentType.toLowerCase().includes("application/pdf")) {
         const blob = await res.blob();
         const blobUrl = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -717,11 +738,11 @@ function Receipt({
         setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
         showToast("PDF downloaded successfully!");
       } else {
-        // Fallback: If printable HTML is served, open in new tab for direct print/save
-        window.open(donation.pdfUrl, "_blank");
+        throw new Error("The server returned a printable page instead of a PDF");
       }
-    } catch {
-      window.open(donation.pdfUrl, "_blank");
+    } catch (error) {
+      console.error("Receipt download failed:", error);
+      showToast("PDF download failed. Use Open PDF to print or save the receipt.");
     } finally {
       setDownloading(false);
     }

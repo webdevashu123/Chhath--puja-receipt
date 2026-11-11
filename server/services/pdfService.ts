@@ -79,6 +79,9 @@ function loadTemplate(): string {
   if (cachedTemplate) return cachedTemplate;
   let html = fs.readFileSync(TEMPLATE_PATH, 'utf8');
   html = html.replace(/url\(fonts\/([^)]+)\)/g, (_, f) => {
+    // The receipt is English-only; embed just the Latin font faces to keep
+    // generation and the resulting PDF small and quick.
+    if (!String(f).includes('-latin-')) return `url('')`;
     const fontFile = path.join(FONT_DIR, f);
     if (!fs.existsSync(fontFile)) {
       console.warn(`[PDF Warning] Font file not found: ${fontFile}`);
@@ -301,5 +304,7 @@ export async function saveReceiptPDF(data: ReceiptData): Promise<string> {
 }
 
 export function getReceiptPath(billNo: string | number): string {
-  return path.join(RECEIPTS_DIR, `${billNo}.pdf`);
+  // Version the cache path so receipts created with the previous bilingual
+  // template are regenerated once with the English-only layout.
+  return path.join(RECEIPTS_DIR, `receipt_${billNo}_en.pdf`);
 }

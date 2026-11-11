@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <title>Donation Receipt {{bill_no}}</title>
@@ -25,6 +25,12 @@
     --cream:#FFF8F1; --cream-2:#FFEEDB;
     --ink:#1b2a3a; --muted:#6b7a89;
   }
+  /* The canonical receipt is intentionally English-only. */
+  .lbl .h,.header .hi-title,.header .hi-place,.title .hi,.amount .lbl .h,
+  .amount .words .hi,.thanks .hi1,.thanks .hi2,.fine span,.sigbox .h{display:none!important;}
+  .field .v > span{display:none!important;}
+  .lbl{flex-direction:column;}
+  .amount .words{flex-direction:column;}
   @page{ size:A4; margin:0; }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ width:210mm; height:297mm; }
@@ -190,10 +196,10 @@
 
   <!-- ===== Header ===== -->
   <div class="header">
-    <div class="blessing">॥ Jai Chhathi Maiya &nbsp;•&nbsp; जय छठी मैया ॥</div>
+    <div class="blessing">Jai Chhathi Maiya</div>
     <div class="en-title">Chhath Puja Samiti</div>
     <div class="hi-title">छठ पूजा समिति</div>
-    <div class="hi-place">Yogidih, Dudhari &nbsp;•&nbsp; योगीडीह, दुधारी &nbsp;•&nbsp; {{year}}</div>
+    <div class="hi-place">Yogidih, Dudhari &nbsp;•&nbsp; {{year}}</div>
     <div class="toran"><svg preserveAspectRatio="none" viewBox="0 0 600 24"><rect width="600" height="24" fill="url(#toran2)"/></svg></div>
   </div>
   <div class="badge"><svg viewBox="0 0 200 200"><use href="#sun"/></svg></div>
@@ -273,14 +279,14 @@
       <div class="line"></div>
       <div class="e">Authorized Signatory</div>
       <div class="h">अधिकृत हस्ताक्षर</div>
-      <div class="org">Chhath Puja Samiti &nbsp;•&nbsp; छठ पूजा समिति</div>
+      <div class="org">Chhath Puja Samiti</div>
     </div>
   </div>
 
   <!-- ===== Footer ===== -->
   <div class="footer">
     <div class="toran-top"><svg preserveAspectRatio="none" viewBox="0 0 600 24"><rect width="600" height="24" fill="url(#toran)"/></svg></div>
-    <div class="jai">Jai Chhathi Maiya! &nbsp;•&nbsp; जय छठी मैया!</div>
+    <div class="jai">Jai Chhathi Maiya!</div>
   </div>
   </div><!-- /.sheet -->
 </div>
