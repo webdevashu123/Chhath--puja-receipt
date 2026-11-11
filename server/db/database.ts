@@ -14,11 +14,32 @@ const db: DatabaseType = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+/**
+ * Normalizes English donor name:
+ * 1. Trims leading/trailing whitespace
+ * 2. Collapses internal consecutive spaces into a single space
+ * 3. Formats to Title Case (e.g., "ramesh kumar" -> "Ramesh Kumar")
+ * 4. Generates lowercase representation for normalized search
+ */
+export function normalizeName(rawName: string): { titleCase: string; lowercase: string } {
+  const trimmed = rawName.trim().replace(/\s+/g, ' ');
+  // Title Case: Capitalize first letter of each word or segment after space, hyphen, period, apostrophe
+  const titleCase = trimmed
+    .toLowerCase()
+    .replace(/(?:^|[\s.'-])[a-z]/g, (char) => char.toUpperCase());
+
+  return {
+    titleCase,
+    lowercase: titleCase.toLowerCase(),
+  };
+}
+
 export function initDatabase(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS donors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
+      name_normalized TEXT NOT NULL,
       phone TEXT NOT NULL UNIQUE,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -26,6 +47,7 @@ export function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS donations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       donor_id INTEGER NOT NULL,
+      name_on_receipt TEXT NOT NULL,
       bill_no TEXT NOT NULL UNIQUE,
       amount INTEGER NOT NULL CHECK(amount > 0),
       payment_mode TEXT NOT NULL CHECK(payment_mode IN ('Cash', 'Online', 'PhonePe', 'GPay', 'Cheque')),
@@ -43,17 +65,17 @@ export function initDatabase(): void {
       value INTEGER NOT NULL
     );
 
+    CREATE INDEX IF NOT EXISTS idx_donors_phone ON donors(phone);
+    CREATE INDEX IF NOT EXISTS idx_donors_name_normalized ON donors(name_normalized);
     CREATE INDEX IF NOT EXISTS idx_donations_donor_id ON donations(donor_id);
     CREATE INDEX IF NOT EXISTS idx_donations_bill_no ON donations(bill_no);
     CREATE INDEX IF NOT EXISTS idx_donations_deleted_at ON donations(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations(created_at);
     CREATE INDEX IF NOT EXISTS idx_donations_share_token ON donations(share_token);
     CREATE INDEX IF NOT EXISTS idx_donations_client_id ON donations(client_id);
-    CREATE INDEX IF NOT EXISTS idx_donors_phone ON donors(phone);
-    CREATE INDEX IF NOT EXISTS idx_donors_name ON donors(name);
   `);
 
-  // Initialize bill_no counter sequence starting at 1000, so first bill is 1001
+  // Initialize sequential counter starting at 1000 so the first bill number generated is 1001
   const initCounter = db.prepare(`
     INSERT OR IGNORE INTO counters (name, value) VALUES ('bill_no', 1000)
   `);
@@ -73,24 +95,63 @@ export function getNextBillNo(): number {
 }
 
 /**
- * Matches donor by phone. If phone exists, reuses donor and updates name only if existing was empty.
+ * Matches donor strictly by phone (10 digits, UNIQUE).
+ * If phone exists, reuses existing donor record.
+ * Stores name used in this transaction as nameOnReceipt so past receipts never mutate.
  */
-export function findOrCreateDonor(phone: string, name: string): { id: number; name: string; phone: string } {
+export function findOrCreateDonor(phone: string, rawName: string): {
+  id: number;
+  name: string;
+  name_normalized: string;
+  phone: string;
+  nameOnReceipt: string;
+} {
+  const { titleCase, lowercase } = normalizeName(rawName);
+
   return db.transaction(() => {
-    const existing = db.prepare(`SELECT id, name, phone FROM donors WHERE phone = ?`).get(phone) as { id: number; name: string; phone: string } | undefined;
+    const existing = db.prepare(`
+      SELECT id, name, name_normalized, phone
+      FROM donors
+      WHERE phone = ?
+    `).get(phone) as { id: number; name: string; name_normalized: string; phone: string } | undefined;
+
     if (existing) {
-      if ((!existing.name || existing.name.trim() === '') && name.trim()) {
-        db.prepare(`UPDATE donors SET name = ? WHERE id = ?`).run(name.trim(), existing.id);
-        return { id: existing.id, name: name.trim(), phone: existing.phone };
+      // If existing name was empty, populate it with normalized name
+      if (!existing.name || existing.name.trim() === '') {
+        db.prepare(`UPDATE donors SET name = ?, name_normalized = ? WHERE id = ?`).run(
+          titleCase,
+          lowercase,
+          existing.id
+        );
+        return {
+          id: existing.id,
+          name: titleCase,
+          name_normalized: lowercase,
+          phone: existing.phone,
+          nameOnReceipt: titleCase,
+        };
       }
-      return existing;
+      return {
+        id: existing.id,
+        name: existing.name,
+        name_normalized: existing.name_normalized,
+        phone: existing.phone,
+        nameOnReceipt: titleCase,
+      };
     }
 
-    const result = db.prepare(`INSERT INTO donors (name, phone) VALUES (?, ?)`).run(name.trim(), phone.trim());
+    // Insert new donor
+    const result = db.prepare(`
+      INSERT INTO donors (name, name_normalized, phone)
+      VALUES (?, ?, ?)
+    `).run(titleCase, lowercase, phone);
+
     return {
       id: Number(result.lastInsertRowid),
-      name: name.trim(),
-      phone: phone.trim(),
+      name: titleCase,
+      name_normalized: lowercase,
+      phone,
+      nameOnReceipt: titleCase,
     };
   })();
 }

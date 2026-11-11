@@ -174,7 +174,7 @@ async function launchBrowser(): Promise<Browser> {
 }
 
 export async function getBrowser(): Promise<Browser> {
-  if (browserInstance && browserInstance.isConnected()) {
+  if (browserInstance && (browserInstance as any).connected) {
     return browserInstance;
   }
   if (!browserPromise) {

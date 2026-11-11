@@ -413,20 +413,52 @@ function Donate({
       : `c_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   });
 
+  const NAME_REGEX = /^[A-Za-z][A-Za-z .'-]{1,59}$/;
+  const NOTE_REGEX = /^[\x20-\x7E]{0,120}$/;
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Block Devanagari (\u0900-\u097F) and restrict to English letters, space, period, apostrophe, hyphen
+    const filtered = e.target.value.replace(/[\u0900-\u097F]/g, "").replace(/[^A-Za-z .'-]/g, "");
+    setName(filtered);
+    if (errors.name) {
+      setErrors((prev) => ({ ...prev, name: "" }));
+    }
+  };
+
+  const handleNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    // Printable ASCII only (0x20 - 0x7E)
+    const filtered = e.target.value.replace(/[^\x20-\x7E]/g, "");
+    setNote(filtered);
+    if (errors.note) {
+      setErrors((prev) => ({ ...prev, note: "" }));
+    }
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
-    if (name.trim().length < 2) nextErrors.name = "Please enter donor's full name";
-    if (phone.replace(/\D/g, "").length !== 10) nextErrors.phone = "Enter a valid 10-digit phone number";
-    if (!amount || Number(amount) < 1) nextErrors.amount = "Please select or enter an amount";
+    const trimmedName = name.trim();
+    if (!NAME_REGEX.test(trimmedName)) {
+      nextErrors.name = "Please enter the name in English";
+    }
+    const cleanPhone = phone.replace(/\D/g, "");
+    if (cleanPhone.length !== 10) {
+      nextErrors.phone = "Enter a valid 10-digit phone number";
+    }
+    if (!amount || Number(amount) < 1) {
+      nextErrors.amount = "Please select or enter an amount";
+    }
+    if (note && !NOTE_REGEX.test(note)) {
+      nextErrors.note = "Please enter the note in English";
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
     setLoading(true);
     try {
       const created = await api.createDonation({
-        donorName: name.trim(),
-        phone: phone.replace(/\D/g, ""),
+        donorName: trimmedName,
+        phone: cleanPhone,
         amount: Number(amount),
         paymentMode: mode,
         note: note.trim() || undefined,
@@ -451,11 +483,14 @@ function Donate({
         </div>
         <label className={`field ${errors.name ? "has-error" : ""}`}>
           <span>
-            Donor name <b>*</b>
+            Donor name (English only) <b>*</b>
           </span>
           <input
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={handleNameChange}
+            autoCapitalize="words"
+            autoComplete="name"
+            spellCheck={false}
             placeholder="e.g. Rajesh Kumar or Sunita Devi"
             required
           />
@@ -560,17 +595,22 @@ function Donate({
           </label>
         )}
 
-        <label className="field">
+        <label className={`field ${errors.note ? "has-error" : ""}`}>
           <span>
-            Note / Seva <em>Optional</em>
+            Note / Seva (English only) <em>Optional</em>
           </span>
           <textarea
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={handleNoteChange}
+            spellCheck={false}
             placeholder="e.g. Ghat lighting, prasad distribution, or family contribution"
             maxLength={120}
           />
-          <small className="counter">{note.length}/120</small>
+          {errors.note ? (
+            <small>{errors.note}</small>
+          ) : (
+            <small className="counter">{note.length}/120</small>
+          )}
         </label>
         <div className="form-spacer" />
         <div className="sticky-action">
@@ -1330,11 +1370,13 @@ function Records({
 function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donation) => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<DonorProfile[]>([]);
+  const [selectedDonor, setSelectedDonor] = useState<DonorProfile | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!query || query.trim().length < 2) {
       setResults([]);
+      setSelectedDonor(null);
       return;
     }
     const handler = setTimeout(async () => {
@@ -1342,6 +1384,11 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
       try {
         const donors = await api.searchDonors(query);
         setResults(donors);
+        if (donors.length === 1) {
+          setSelectedDonor(donors[0]);
+        } else {
+          setSelectedDonor(null);
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -1352,8 +1399,8 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
     return () => clearTimeout(handler);
   }, [query]);
 
-  const donor = results[0];
-  const history = donor?.donations || [];
+  const donor = selectedDonor || (results.length === 1 ? results[0] : null);
+  const history = donor?.donations || donor?.history || [];
 
   return (
     <>
@@ -1362,7 +1409,7 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
         <div className="search-intro">
           <p className="eyebrow">Donor directory</p>
           <h1>Search donation history</h1>
-          <p>Enter a donor's name or 10-digit phone number.</p>
+          <p>Enter a donor's English name or 10-digit phone number.</p>
         </div>
         <div className="search-field large">
           <Icon name="search" />
@@ -1370,10 +1417,10 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Name or phone number"
+            placeholder="Search name or 10-digit phone"
           />
           {query && (
-            <button onClick={() => setQuery("")}>
+            <button onClick={() => { setQuery(""); setResults([]); setSelectedDonor(null); }}>
               <Icon name="close" size={17} />
             </button>
           )}
@@ -1391,7 +1438,7 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
           <p className="search-hint">Type at least 2 characters to search</p>
         )}
         {loading && <p style={{ textAlign: "center", color: "var(--color-muted)", padding: "20px" }}>Searching donors…</p>}
-        {query.length >= 2 && !loading && !donor && (
+        {query.length >= 2 && !loading && results.length === 0 && (
           <div className="empty-state">
             <span>
               <Icon name="search" size={30} />
@@ -1400,31 +1447,94 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
             <p>We couldn't find anyone matching “{query}”. Check the spelling or phone number.</p>
           </div>
         )}
+
+        {/* If multiple donors matched, show list with prominent phone number */}
+        {results.length > 1 && !selectedDonor && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "16px" }}>
+            <p className="eyebrow">{results.length} Donors Found (Select to view)</p>
+            {results.map((item) => (
+              <div
+                key={item.id}
+                onClick={() => setSelectedDonor(item)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "14px 16px",
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid rgba(13, 59, 102, 0.12)",
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.04)",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <span className="avatar">{initials(item.name)}</span>
+                  <div>
+                    <strong style={{ display: "block", fontSize: "15px", color: "var(--color-navy)" }}>{item.name}</strong>
+                    <span style={{ fontSize: "13px", color: "var(--color-muted)", fontWeight: "600" }}>
+                      +91 {item.phone}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <strong style={{ display: "block", color: "var(--color-saffron)", fontSize: "15px" }}>
+                    {formatAmount(item.totalDonated || item.total_donated)}
+                  </strong>
+                  <small style={{ color: "var(--color-muted)", fontSize: "11px" }}>
+                    {item.donationCount || item.donation_count} donation{(item.donationCount || item.donation_count) !== 1 ? "s" : ""}
+                  </small>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Selected Donor Profile View */}
         {donor && (
           <section className="donor-profile">
+            {results.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setSelectedDonor(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--color-navy)",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  marginBottom: "12px",
+                }}
+              >
+                ← Back to matching donors ({results.length})
+              </button>
+            )}
             <div className="profile-head">
               <span className="avatar large">{initials(donor.name)}</span>
               <div>
                 <p>Donor profile</p>
                 <h2>{donor.name}</h2>
-                <span>+91 {donor.phone}</span>
-                {donor.address && <small style={{ display: "block", color: "var(--color-muted)", marginTop: "2px" }}>{donor.address}</small>}
+                <span style={{ fontWeight: "700", color: "var(--color-navy)" }}>📞 +91 {donor.phone}</span>
               </div>
             </div>
             <div className="profile-stats">
               <div>
                 <small>Total donated</small>
-                <strong>{formatAmount(donor.total_donated)}</strong>
+                <strong>{formatAmount(donor.totalDonated || donor.total_donated)}</strong>
               </div>
               <div>
                 <small>Donations</small>
-                <strong>{donor.donation_count}</strong>
+                <strong>{donor.donationCount || donor.donation_count}</strong>
               </div>
             </div>
             <div className="contact-actions">
               <a href={`tel:${donor.phone.replace(/\s+/g, "")}`}>
                 <Icon name="phone" size={18} />
-                Call
+                Call (+91 {donor.phone})
               </a>
               <a
                 href={`https://wa.me/91${donor.phone.replace(/\D/g, "")}`}
@@ -1449,10 +1559,10 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
                   <div>
                     <strong>{formatAmount(item.amount)}</strong>
                     <span>
-                      {item.date} · {item.mode}
+                      {item.date} · {item.paymentMode || item.mode}
                     </span>
                   </div>
-                  <small>{item.bill}</small>
+                  <small>#{item.billNo || item.bill}</small>
                 </div>
               ))}
             </div>

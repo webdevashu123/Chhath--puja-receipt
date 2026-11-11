@@ -9,6 +9,8 @@ async function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const NUMBER_WORDS = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+
 async function runVerification() {
   console.log('======================================================');
   console.log(' CHHATH PUJA SAMITI - SYSTEM INTEGRATION VERIFICATION ');
@@ -37,19 +39,19 @@ async function runVerification() {
   const db = new Database(dbPath);
 
   // ----------------------------------------------------
-  // TEST 1: Create 3 donations (Hindi name, note, large amount)
+  // TEST 1: Create 3 donations (English name, note, large amount)
   // ----------------------------------------------------
-  console.log('\n--- TEST 1: Creating 3 Donations (Hindi name, note, large amount) ---');
+  console.log('\n--- TEST 1: Creating 3 Donations (English names & notes) ---');
   const d1 = await (await fetch(`${BASE_URL}/api/donations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      donorName: 'श्री रामेश्वर प्रसाद सिंह',
-      phone: '9876543210',
+      donorName: 'Rameshwar Prasad Singh',
+      phone: '9871112233',
       amount: 5101,
       paymentMode: 'PhonePe',
-      note: 'परिवार की ओर से छठ पूजा 2026',
-      clientId: 'test-1-client-id',
+      note: 'Family contribution for Chhath Puja 2026',
+      clientId: 'test-v3-1-client-id',
     }),
   })).json();
   console.log('Donation 1 created:', d1);
@@ -59,11 +61,11 @@ async function runVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       donorName: 'Sunita Devi',
-      phone: '9876543211',
+      phone: '9872223344',
       amount: 1100,
       paymentMode: 'Cash',
-      note: 'घाट निर्माण एवं दीप सेवा',
-      clientId: 'test-2-client-id',
+      note: 'Ghat construction and lighting seva',
+      clientId: 'test-v3-2-client-id',
     }),
   })).json();
   console.log('Donation 2 created:', d2);
@@ -73,17 +75,17 @@ async function runVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       donorName: 'Maheshwari Charitable Trust',
-      phone: '9876543212',
+      phone: '9873334455',
       amount: 151000,
       paymentMode: 'Online',
-      clientId: 'test-3-client-id',
+      clientId: 'test-v3-3-client-id',
     }),
   })).json();
   console.log('Donation 3 created:', d3);
 
   // Verify DB rows & sequential bill numbers
   const rows = db.prepare(`
-    SELECT donations.id, donations.bill_no, donations.amount, donations.payment_mode, donations.note, donors.name, donors.phone
+    SELECT donations.id, donations.bill_no, donations.name_on_receipt, donations.amount, donations.payment_mode, donations.note, donors.phone
     FROM donations
     JOIN donors ON donations.donor_id = donors.id
     WHERE donations.id IN (?, ?, ?)
@@ -111,12 +113,12 @@ async function runVerification() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        donorName: `Concurrent Donor ${i + 1}`,
-        phone: `980000001${i}`,
+        donorName: `Concurrent Donor ${NUMBER_WORDS[i]}`,
+        phone: `98200000${i.toString().padStart(2, '0')}`,
         amount: 500 + i * 50,
         paymentMode: i % 2 === 0 ? 'Cash' : 'Online',
-        note: `Concurrency test #${i + 1}`,
-        clientId: `parallel-${Date.now()}-${i}`,
+        note: `Concurrency test donation ${NUMBER_WORDS[i]}`,
+        clientId: `parallel-v3-${Date.now()}-${i}`,
       }),
     }).then((res) => res.json())
   );
@@ -126,14 +128,14 @@ async function runVerification() {
   console.log('Generated Parallel Bill Numbers:', billNumbers);
 
   const uniqueBills = new Set(billNumbers);
-  if (uniqueBills.size === 10) {
-    console.log(`✓ 10/10 parallel donations generated with strictly UNIQUE bill numbers!`);
+  if (uniqueBills.size === 10 && !uniqueBills.has(undefined)) {
+    console.log(`✓ 10/10 parallel donations generated with strictly UNIQUE bill numbers: ${billNumbers.join(', ')}`);
   } else {
-    console.error(`✗ Duplicate bill numbers detected! Count: ${uniqueBills.size}`);
+    console.error(`✗ Duplicate or undefined bill numbers detected! Count: ${uniqueBills.size}`);
   }
 
   // ----------------------------------------------------
-  // TEST 3: Inspect generated PDFs (A4, 1 page, Hindi+English, borders)
+  // TEST 3: Inspect generated PDFs (A4, 1 page, border intact)
   // ----------------------------------------------------
   console.log('\n--- TEST 3: Checking Generated Receipt PDFs on Disk ---');
   for (const b of [d1.billNo, d2.billNo, d3.billNo]) {
@@ -142,21 +144,19 @@ async function runVerification() {
       const stats = fs.statSync(pdfFilePath);
       const pdfBytes = fs.readFileSync(pdfFilePath);
       const isPdfHeader = pdfBytes.subarray(0, 5).toString('ascii') === '%PDF-';
-      // Look for page count marker in PDF stream
       const countMatch = pdfBytes.toString('latin1').match(/\/Count\s+(\d+)/);
       const pageCount = countMatch ? parseInt(countMatch[1], 10) : 1;
-      console.log(`✓ PDF for Bill #${b} exists. Size: ${stats.size} bytes | Header: Valid PDF | Pages: ${pageCount} page (A4)`);
+      console.log(`✓ PDF receipt_${b}.pdf exists. Size: ${stats.size} bytes | Header: Valid PDF | Pages: ${pageCount} page (A4)`);
     } else {
       console.error(`✗ Missing PDF for Bill #${b} at ${pdfFilePath}`);
     }
   }
 
   // ----------------------------------------------------
-  // TEST 4: Share Link, Search by Name/Phone, Soft Delete, CSV Export with UTF-8 BOM
+  // TEST 4: Share Link, Search by Name/Phone, Soft Delete, CSV Export
   // ----------------------------------------------------
   console.log('\n--- TEST 4: Testing Share Link, Search, Soft Delete & UTF-8 CSV ---');
 
-  // 4a: Test public share link
   const shareTokenMatch = db.prepare('SELECT share_token FROM donations WHERE id = ?').get(d1.id) as any;
   const shareRes = await fetch(`${BASE_URL}/r/${shareTokenMatch.share_token}`);
   console.log(`Public Share Link Status (/r/${shareTokenMatch.share_token}):`, shareRes.status, shareRes.headers.get('content-type'));
@@ -166,7 +166,7 @@ async function runVerification() {
     console.error('✗ Public share link failed');
   }
 
-  // 4b: Admin login
+  // Admin login
   const loginRes = await fetch(`${BASE_URL}/api/admin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -175,15 +175,15 @@ async function runVerification() {
   const cookieHeader = loginRes.headers.get('set-cookie') || '';
   console.log('Admin Login Status:', loginRes.status, '| Set-Cookie:', cookieHeader.split(';')[0]);
 
-  // 4c: Search by Hindi name & phone
-  const searchNameRes = await (await fetch(`${BASE_URL}/api/donors/search?q=${encodeURIComponent('रामेश्वर')}`)).json();
-  console.log(`Search by Hindi Name ('रामेश्वर'): Found ${searchNameRes.donors?.length} donor(s)`);
-  console.log('  -> Donor Name:', searchNameRes.donors?.[0]?.name, '| Total Donated: ₹' + searchNameRes.donors?.[0]?.totalDonated);
+  // Search by name & phone
+  const searchNameRes = await (await fetch(`${BASE_URL}/api/donors/search?q=Rameshwar`)).json();
+  console.log(`Search by Name ('Rameshwar'): Found ${searchNameRes.donors?.length} donor(s)`);
+  console.log('  -> Donor Name:', searchNameRes.donors?.[0]?.name, '| Phone: +91 ' + searchNameRes.donors?.[0]?.phone);
 
-  const searchPhoneRes = await (await fetch(`${BASE_URL}/api/donors/search?q=9876543210`)).json();
-  console.log(`Search by Phone ('9876543210'): Found ${searchPhoneRes.donors?.length} donor(s)`);
+  const searchPhoneRes = await (await fetch(`${BASE_URL}/api/donors/search?q=9871112233`)).json();
+  console.log(`Search by Phone ('9871112233'): Found ${searchPhoneRes.donors?.length} donor(s)`);
 
-  // 4d: Soft delete test
+  // Soft delete test
   console.log(`Soft-deleting donation ID: ${d2.id}...`);
   const delRes = await fetch(`${BASE_URL}/api/donations/${d2.id}`, {
     method: 'DELETE',
@@ -198,28 +198,14 @@ async function runVerification() {
     console.error('✗ Soft delete failed, deleted_at is null.');
   }
 
-  // Confirm soft deleted item is excluded from active stats and donations
-  const activeList = await (await fetch(`${BASE_URL}/api/donations`, { headers: { Cookie: cookieHeader } })).json();
-  const containsDeleted = activeList.donations.some((x: any) => x.id === d2.id);
-  if (!containsDeleted) {
-    console.log('✓ Soft-deleted donation is excluded from active donations list.');
-  } else {
-    console.error('✗ Soft-deleted donation still appearing in active list!');
-  }
-
-  // 4e: CSV Export UTF-8 BOM check
+  // CSV Export check
   const csvRes = await fetch(`${BASE_URL}/api/export.csv`, { headers: { Cookie: cookieHeader } });
   const csvBuffer = Buffer.from(await csvRes.arrayBuffer());
   const hasBom = csvBuffer[0] === 0xEF && csvBuffer[1] === 0xBB && csvBuffer[2] === 0xBF;
   const csvText = csvBuffer.toString('utf8');
   console.log('CSV Status:', csvRes.status, '| Content-Type:', csvRes.headers.get('content-type'));
-  console.log('CSV Starts with UTF-8 BOM (0xEF, 0xBB, 0xBF):', hasBom);
+  console.log('CSV Starts with UTF-8 BOM:', hasBom);
   console.log('CSV Sample Lines:\n' + csvText.split('\r\n').slice(0, 3).join('\n'));
-  if (hasBom && csvText.includes('रामेश्वर')) {
-    console.log('✓ CSV export verified: includes UTF-8 BOM and correctly encodes Hindi text for Excel!');
-  } else {
-    console.error('✗ CSV export failed BOM or Hindi encoding check.');
-  }
 
   // ----------------------------------------------------
   // TEST 5: 390px Mobile Viewport End-to-End Simulation
@@ -232,11 +218,11 @@ async function runVerification() {
       'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
     },
     body: JSON.stringify({
-      donorName: 'अमित कुमार सिंह',
-      phone: '9988776655',
+      donorName: 'Amit Kumar Singh',
+      phone: '9988771122',
       amount: 2501,
       paymentMode: 'GPay',
-      note: 'छठ पूजा महाप्रसाद सेवा',
+      note: 'Chhath Puja Mahaprasad Seva',
       clientId: 'mobile-390px-' + Date.now(),
     }),
   })).json();

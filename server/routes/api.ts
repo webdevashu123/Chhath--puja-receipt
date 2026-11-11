@@ -1,24 +1,39 @@
 import express, { type Request, type Response } from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import db, { getNextBillNo, findOrCreateDonor } from '../db/database.ts';
-import { renderReceiptPDF, saveReceiptPDF, getReceiptPath } from '../services/pdfService.ts';
+import db, { getNextBillNo, findOrCreateDonor, normalizeName } from '../db/database.ts';
+import { saveReceiptPDF, getReceiptPath } from '../services/pdfService.ts';
 import { requireAdminAuth, generateAdminToken, loginRateLimiter } from '../middleware/auth.ts';
-import { getWhatsAppMessage, sendWhatsAppReceiptCloud } from '../services/whatsappService.ts';
+import { sendWhatsAppReceiptCloud } from '../services/whatsappService.ts';
 
 const router = express.Router();
 
-// ---------- Validation Schemas ----------
+// ---------- Validation Schemas (Strict English-only rules) ----------
+const NAME_REGEX = /^[A-Za-z][A-Za-z .'-]{1,59}$/;
+const NOTE_REGEX = /^[\x20-\x7E]{0,120}$/;
+
 const createDonationSchema = z.object({
-  donorName: z.string().trim().min(1, 'Donor name is required'),
-  phone: z.string().trim().regex(/^\d{10}$/, 'Phone number must be exactly 10 digits'),
-  amount: z.number().int().positive('Amount must be a positive integer'),
+  donorName: z
+    .string()
+    .trim()
+    .regex(NAME_REGEX, 'Please enter the name in English'),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\d{10}$/, 'Phone number must be exactly 10 digits'),
+  amount: z
+    .number()
+    .int()
+    .positive('Amount must be a positive integer'),
   paymentMode: z.enum(['Cash', 'Online', 'PhonePe', 'GPay', 'Cheque']),
-  note: z.string().optional().default(''),
+  note: z
+    .string()
+    .regex(NOTE_REGEX, 'Please enter the note in English (letters, numbers and symbols only)')
+    .optional()
+    .default(''),
   clientId: z.string().optional(),
 });
 
@@ -38,7 +53,8 @@ router.post('/admin/login', loginRateLimiter, async (req: Request, res: Response
   try {
     const parseResult = adminLoginSchema.safeParse(req.body);
     if (!parseResult.success) {
-      res.status(400).json({ error: parseResult.error.errors[0]?.message || 'Invalid PIN' });
+      const errorMsg = parseResult.error.issues?.[0]?.message || 'Invalid PIN';
+      res.status(400).json({ error: errorMsg });
       return;
     }
 
@@ -103,7 +119,8 @@ router.post('/donations', async (req: Request, res: Response) => {
   try {
     const parseResult = createDonationSchema.safeParse(req.body);
     if (!parseResult.success) {
-      res.status(400).json({ error: parseResult.error.errors[0]?.message || 'Invalid input data' });
+      const errorMsg = parseResult.error.issues?.[0]?.message || 'Invalid input data';
+      res.status(400).json({ error: errorMsg });
       return;
     }
 
@@ -141,10 +158,11 @@ router.post('/donations', async (req: Request, res: Response) => {
 
       const info = db.prepare(`
         INSERT INTO donations (
-          donor_id, bill_no, amount, payment_mode, note, share_token, client_id, pdf_path
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          donor_id, name_on_receipt, bill_no, amount, payment_mode, note, share_token, client_id, pdf_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         donor.id,
+        donor.nameOnReceipt,
         billNo,
         amount,
         paymentMode,
@@ -167,7 +185,7 @@ router.post('/donations', async (req: Request, res: Response) => {
     // Generate and persist receipt PDF
     const pdfPath = await saveReceiptPDF({
       billNo,
-      donorName: donor.name,
+      donorName: donor.nameOnReceipt,
       phone: donor.phone,
       amount,
       paymentMode,
@@ -178,7 +196,7 @@ router.post('/donations', async (req: Request, res: Response) => {
     // Optional WhatsApp Cloud API message send
     sendWhatsAppReceiptCloud({
       phone: donor.phone,
-      name: donor.name,
+      name: donor.nameOnReceipt,
       amount,
       billNo,
       shareUrl,
@@ -213,9 +231,11 @@ router.get('/donations', requireAdminAuth, (req: Request, res: Response) => {
     const params: any[] = [];
 
     if (search && String(search).trim()) {
-      const q = `%${String(search).trim()}%`;
-      conditions.push('(donors.name LIKE ? OR donors.phone LIKE ? OR donations.bill_no LIKE ?)');
-      params.push(q, q, q);
+      const q = String(search).trim();
+      const qLower = `%${q.toLowerCase()}%`;
+      const qPhone = `%${q}%`;
+      conditions.push('(donors.phone LIKE ? OR donors.name_normalized LIKE ? OR donations.name_on_receipt LIKE ? OR donations.bill_no LIKE ?)');
+      params.push(qPhone, qLower, qLower, qPhone);
     }
 
     if (mode && String(mode).trim() && String(mode) !== 'All') {
@@ -249,13 +269,13 @@ router.get('/donations', requireAdminAuth, (req: Request, res: Response) => {
       SELECT 
         donations.id,
         donations.bill_no as billNo,
+        donations.name_on_receipt as donorName,
         donations.amount,
         donations.payment_mode as paymentMode,
         donations.note,
         donations.created_at as createdAt,
         donations.share_token as shareToken,
         donors.id as donorId,
-        donors.name as donorName,
         donors.phone
       FROM donations
       JOIN donors ON donations.donor_id = donors.id
@@ -303,12 +323,12 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
       SELECT 
         donations.id,
         donations.bill_no as billNo,
+        donations.name_on_receipt as donorName,
         donations.amount,
         donations.payment_mode as paymentMode,
         donations.note,
         donations.created_at as createdAt,
         donations.deleted_at as deletedAt,
-        donors.name as donorName,
         donors.phone
       FROM donations
       JOIN donors ON donations.donor_id = donors.id
@@ -387,14 +407,17 @@ router.get('/donors/search', (req: Request, res: Response) => {
       return;
     }
 
-    const queryWildcard = `%${q}%`;
+    const qLower = `%${q.toLowerCase()}%`;
+    const qPhone = `%${q}%`;
+
+    // Case-insensitive search on normalized name or phone match
     const donors = db.prepare(`
       SELECT id, name, phone, created_at as createdAt
       FROM donors
-      WHERE phone LIKE ? OR name LIKE ?
+      WHERE phone LIKE ? OR name_normalized LIKE ?
       ORDER BY id DESC
       LIMIT 20
-    `).all(queryWildcard, queryWildcard) as any[];
+    `).all(qPhone, qLower) as any[];
 
     const publicBaseUrl = getPublicBaseUrl(req);
 
@@ -409,6 +432,7 @@ router.get('/donors/search', (req: Request, res: Response) => {
         SELECT 
           id,
           bill_no as billNo,
+          name_on_receipt as donorName,
           amount,
           payment_mode as paymentMode,
           note,
@@ -428,7 +452,7 @@ router.get('/donors/search', (req: Request, res: Response) => {
       return {
         id: donor.id,
         name: donor.name,
-        phone: donor.phone,
+        phone: donor.phone, // Always show phone with donor
         createdAt: donor.createdAt,
         totalDonated: stats.totalDonated,
         donationCount: stats.donationCount,
@@ -508,7 +532,7 @@ router.get('/stats', (req: Request, res: Response) => {
 });
 
 // ==========================================
-// 8. CSV EXPORT (Admin, UTF-8 BOM)
+// 8. CSV EXPORT (Admin, English only)
 // ==========================================
 
 router.get('/export.csv', requireAdminAuth, (req: Request, res: Response) => {
@@ -517,7 +541,7 @@ router.get('/export.csv', requireAdminAuth, (req: Request, res: Response) => {
       SELECT 
         donations.bill_no as billNo,
         donations.created_at as createdAt,
-        donors.name as donorName,
+        donations.name_on_receipt as donorName,
         donors.phone,
         donations.amount,
         donations.payment_mode as paymentMode,
@@ -557,7 +581,7 @@ router.get('/export.csv', requireAdminAuth, (req: Request, res: Response) => {
       ].join(','));
     }
 
-    // Prepend UTF-8 BOM (\uFEFF) so Excel opens Hindi characters properly
+    // Prepend UTF-8 BOM (\uFEFF) for standard Excel compatibility
     const csvContent = '\uFEFF' + lines.join('\r\n');
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
