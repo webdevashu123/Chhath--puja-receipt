@@ -6,7 +6,10 @@
 FROM node:24-bookworm-slim
 
 # Install Chromium and Indian & Noto fonts
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
     chromium \
     fonts-noto-core \
     fonts-noto-cjk \
