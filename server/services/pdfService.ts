@@ -172,6 +172,7 @@ class RenderQueue {
 }
 
 const renderQueue = new RenderQueue(2);
+const pendingPdfWrites = new Map<string, Promise<string>>();
 
 // ---------- Puppeteer Singleton with Auto-Recovery ----------
 let browserInstance: Browser | null = null;
@@ -299,12 +300,39 @@ export async function renderReceiptPDF(data: ReceiptData, language: ReceiptLangu
  * Returns the absolute path on disk.
  */
 export async function saveReceiptPDF(data: ReceiptData, language: ReceiptLanguage = 'en'): Promise<string> {
-  const pdfBuffer = await renderReceiptPDF(data, language);
   const filePath = getReceiptPath(data.billNo, language);
-  fs.writeFileSync(filePath, pdfBuffer);
-  return filePath;
+  if (isValidReceiptPDF(filePath)) return filePath;
+
+  const pending = pendingPdfWrites.get(filePath);
+  if (pending) return pending;
+
+  const generation = renderReceiptPDF(data, language)
+    .then((pdfBuffer) => {
+      if (pdfBuffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+        throw new Error('Chromium returned an invalid PDF file.');
+      }
+      fs.writeFileSync(filePath, pdfBuffer);
+      return filePath;
+    })
+    .finally(() => pendingPdfWrites.delete(filePath));
+
+  pendingPdfWrites.set(filePath, generation);
+  return generation;
 }
 
 export function getReceiptPath(billNo: string | number, language: ReceiptLanguage = 'en'): string {
   return path.join(RECEIPTS_DIR, `receipt_${billNo}_${language}_v2.pdf`);
+}
+
+export function isValidReceiptPDF(filePath: string): boolean {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const signature = Buffer.alloc(5);
+    return fs.readSync(fd, signature, 0, 5, 0) === 5 && signature.toString('ascii') === '%PDF-';
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
 }

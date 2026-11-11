@@ -3,7 +3,7 @@
 # Node 20 + Chromium + Noto Fonts for Puppeteer
 # ==========================================
 
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim
 
 # Install Chromium and Indian & Noto fonts
 RUN apt-get update && apt-get install -y --no-install-recommends \

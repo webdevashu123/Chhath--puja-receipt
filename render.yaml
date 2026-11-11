@@ -1,7 +1,7 @@
 services:
   - type: web
     name: chhath-puja-receipt
-    env: docker
+    runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz

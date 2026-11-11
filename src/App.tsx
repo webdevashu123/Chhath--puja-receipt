@@ -662,74 +662,79 @@ function Receipt({
   onHome: () => void;
   showToast: (text: string) => void;
 }) {
-  const [pdfLanguage, setPdfLanguage] = useState<"en" | "hi">("en");
   const [sharing, setSharing] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfError, setPdfError] = useState("");
 
   const billNumber = donation.billNo || donation.bill;
   const donorName = donation.donorName || donation.name;
-  const withLanguage = (url: string) => `${url}${url.includes("?") ? "&" : "?"}lang=${pdfLanguage}`;
-  const receiptUrl = withLanguage(donation.shareUrl || donation.pdfUrl);
-  const pdfUrl = withLanguage(donation.pdfUrl);
-  const downloadPdfUrl = `${pdfUrl}&download=1`;
-  const shareMessage = pdfLanguage === "hi"
-    ? `नमस्ते ${donorName}, छठ पूजा समिति को ₹${donation.amount} के दान के लिए धन्यवाद। रसीद संख्या #${billNumber}: ${receiptUrl}`
-    : `Hello ${donorName}, thank you for your donation of INR ${donation.amount} to Chhath Puja Samiti. Receipt #${billNumber}: ${receiptUrl}`;
+  const receiptUrl = donation.shareUrl || donation.pdfUrl;
+  const pdfUrl = donation.pdfUrl;
+  const downloadPdfUrl = `${pdfUrl}${pdfUrl.includes("?") ? "&" : "?"}download=1`;
+  const shareMessage = `Hello ${donorName}, thank you for your donation of INR ${donation.amount} to Chhath Puja Samiti. Receipt #${billNumber}: ${receiptUrl}`;
+  useEffect(() => {
+    let cancelled = false;
+    setPdfFile(null);
+    setPdfError("");
 
-  const startPdfDownload = () => {
-    const link = document.createElement("a");
-    link.href = downloadPdfUrl;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  };
+    fetch(pdfUrl, { cache: "no-store" })
+      .then(async (response) => {
+        const contentType = response.headers.get("content-type") || "";
+        if (!response.ok || !contentType.toLowerCase().includes("application/pdf")) {
+          const detail = contentType.toLowerCase().includes("application/json")
+            ? (await response.json().catch(() => ({}))).error
+            : "The server did not return a PDF.";
+          throw new Error(detail || "Could not generate the PDF.");
+        }
+        const blob = await response.blob();
+        const signature = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+        if (String.fromCharCode(...signature) !== "%PDF-") throw new Error("The generated file is not a valid PDF.");
+        if (!cancelled) setPdfFile(new File([blob], `receipt_${billNumber}_en.pdf`, { type: "application/pdf" }));
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setPdfError(error.message || "Could not prepare the PDF.");
+      });
+
+    return () => { cancelled = true; };
+  }, [pdfUrl, billNumber]);
 
   const shareWhatsApp = async () => {
+    if (!pdfFile) {
+      showToast(pdfError || "Preparing the English PDF. Please try again in a moment.");
+      return;
+    }
+
     setSharing(true);
     try {
-      // 1) Primary (mobile): Web Share API Level 2 with attached PDF file
-      if (typeof navigator !== "undefined" && navigator.share && navigator.canShare) {
-        try {
-          showToast("Preparing PDF for sharing…");
-          const res = await fetch(pdfUrl);
-          if (res.ok) {
-            const contentType = res.headers.get("content-type") || "";
-            if (contentType.toLowerCase().includes("application/pdf")) {
-              const blob = await res.blob();
-              const file = new File([blob], `receipt_${billNumber}_${pdfLanguage}.pdf`, { type: "application/pdf" });
-              if (navigator.canShare({ files: [file] })) {
-                await navigator.share({
-                  files: [file],
-                  title: `${pdfLanguage === "hi" ? "दान रसीद" : "Donation Receipt"} #${billNumber}`,
-                  text: shareMessage,
-                });
-                showToast("Receipt shared");
-                setSharing(false);
-                return;
-              }
-            }
-          }
-        } catch (shareErr: any) {
-          if (shareErr.name === "AbortError") {
-            setSharing(false);
-            return;
-          }
-          console.warn("File sharing unavailable; opening WhatsApp link:", shareErr);
-        }
+      if (typeof navigator !== "undefined" && navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: `Donation Receipt #${billNumber}`,
+          text: shareMessage,
+        });
+        showToast("PDF shared");
+        return;
       }
 
-      // WhatsApp web links cannot attach files, so download the selected PDF as well.
-      const waUrl = `https://wa.me/?text=${encodeURIComponent(shareMessage)}`;
-      startPdfDownload();
-      window.open(waUrl, "_blank");
-      showToast("PDF download started; attach it in WhatsApp if it is not attached automatically.");
-    } catch (error) {
-      console.error("Receipt sharing failed:", error);
-      showToast("Could not share the receipt. Please download the PDF and try again.");
+      const objectUrl = URL.createObjectURL(pdfFile);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = pdfFile.name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareMessage)}`, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      showToast("PDF downloaded. WhatsApp opened with the receipt link; attach the downloaded PDF if needed.");
+    } catch (error: any) {
+      if (error?.name !== "AbortError") {
+        console.error("Receipt sharing failed:", error);
+        showToast("Could not share the PDF. Use Download English PDF and attach it in WhatsApp.");
+      }
     } finally {
       setSharing(false);
     }
   };
-
   return (
     <>
       <TopBar title="Donation Receipt" back onBack={onHome} />
@@ -805,24 +810,21 @@ function Receipt({
           <p className="blessing">Jai Chhath Maiya!</p>
         </article>
         <div className="receipt-actions">
-          <div className="receipt-language-choice" role="group" aria-label="PDF receipt language">
-            <button type="button" className={pdfLanguage === "en" ? "selected" : ""} aria-pressed={pdfLanguage === "en"} onClick={() => setPdfLanguage("en")}>English PDF</button>
-            <button type="button" className={pdfLanguage === "hi" ? "selected" : ""} aria-pressed={pdfLanguage === "hi"} onClick={() => setPdfLanguage("hi")}>हिंदी PDF</button>
-          </div>
           <a className="primary-button" href={pdfUrl} target="_blank" rel="noreferrer">
             <Icon name="file" size={19} />
-            Open {pdfLanguage === "hi" ? "Hindi" : "English"} PDF
+            Open English PDF
           </a>
           <div>
-            <button className="secondary-button whatsapp" onClick={shareWhatsApp} disabled={sharing}>
+            <button className="secondary-button whatsapp" onClick={shareWhatsApp} disabled={sharing || !pdfFile}>
               <Icon name="share" size={18} />
-              {sharing ? "Sharing…" : `Share ${pdfLanguage === "hi" ? "Hindi" : "English"} PDF`}
+              {sharing ? "Sharing…" : "Share English PDF"}
             </button>
             <a className="secondary-button" href={downloadPdfUrl}>
               <Icon name="file" size={18} />
-              Download {pdfLanguage === "hi" ? "Hindi" : "English"} PDF
+              Download English PDF
             </a>
           </div>
+          {pdfError && <p className="form-error" role="alert">PDF could not be prepared: {pdfError}</p>}
           <button className="ghost-button" onClick={onNew}>
             <Icon name="plus" size={18} />
             New Donation

@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import db, { getNextBillNo, findOrCreateDonor, normalizeName } from '../db/database.ts';
-import { saveReceiptPDF, getReceiptPath, renderPrintableReceiptHTML } from '../services/pdfService.ts';
+import { saveReceiptPDF, getReceiptPath, isValidReceiptPDF, renderPrintableReceiptHTML } from '../services/pdfService.ts';
 import { requireAdminAuth, generateAdminToken, loginRateLimiter } from '../middleware/auth.ts';
 import { sendWhatsAppReceiptCloud } from '../services/whatsappService.ts';
 
@@ -320,7 +320,7 @@ router.get('/donations', requireAdminAuth, (req: Request, res: Response) => {
 
 router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => {
   try {
-    const language = req.query.lang === 'hi' ? 'hi' : 'en';
+    const language = 'en';
     const donationId = parseInt(String(req.params.id), 10);
     if (!donationId) {
       res.status(400).json({ error: 'Invalid donation ID' });
@@ -351,7 +351,8 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
     const targetPdfPath = getReceiptPath(donation.billNo, language);
 
     // If file missing on disk, regenerate on-the-fly
-    if (!fs.existsSync(targetPdfPath)) {
+    if (!isValidReceiptPDF(targetPdfPath)) {
+      fs.rmSync(targetPdfPath, { force: true });
       try {
         console.log(`[Receipt] PDF missing on disk for bill #${donation.billNo}. Regenerating...`);
         await saveReceiptPDF({
@@ -364,11 +365,13 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
           date: donation.createdAt,
         }, language);
       } catch (genErr) {
-        console.warn(`[Receipt] PDF generation notice for bill #${donation.billNo}:`, genErr);
+        console.error(`[Receipt] PDF generation failed for bill #${donation.billNo}:`, genErr);
+        res.status(503).json({ error: 'PDF generation failed. Please try again shortly.' });
+        return;
       }
     }
 
-    if (fs.existsSync(targetPdfPath)) {
+    if (isValidReceiptPDF(targetPdfPath)) {
       res.setHeader('Content-Type', 'application/pdf');
       const disposition = req.query.download === '1' ? 'attachment' : 'inline';
       res.setHeader('Content-Disposition', `${disposition}; filename="receipt_${donation.billNo}_${language}.pdf"`);
@@ -376,23 +379,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
       return;
     }
 
-    if (req.query.download === '1') {
-      res.status(503).type('text/plain').send('The receipt PDF could not be generated. Please try Open PDF again in a moment.');
-      return;
-    }
-
-    // Show the receipt fallback without launching Chrome's print dialog.
-    const html = renderPrintableReceiptHTML({
-      billNo: donation.billNo,
-      donorName: donation.donorName,
-      phone: donation.phone,
-      amount: donation.amount,
-      paymentMode: donation.paymentMode,
-      note: donation.note,
-      date: donation.createdAt,
-    }, language, false);
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(html);
+    res.status(503).json({ error: 'PDF generation did not produce a valid PDF. Check the server Chromium setup.' });
   } catch (error) {
     console.error('[Receipt PDF Error]:', error);
     res.status(500).json({ error: 'Could not stream receipt PDF' });

@@ -14,9 +14,10 @@ import { persistSnapshot } from './db/mongoSnapshot.ts';
 import apiRouter from './routes/api.ts';
 import { apiRateLimiter } from './middleware/auth.ts';
 import { initBackupScheduler } from './services/backupService.ts';
-import { getReceiptPath, saveReceiptPDF, renderPrintableReceiptHTML } from './services/pdfService.ts';
+import { getReceiptPath, saveReceiptPDF, isValidReceiptPDF } from './services/pdfService.ts';
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 
 // Initialize Database & Background Schedulers
@@ -126,11 +127,12 @@ app.get('/r/:token', async (req: Request, res: Response) => {
       return;
     }
 
-    const language = req.query.lang === 'hi' ? 'hi' : 'en';
+    const language = 'en';
     const targetPdfPath = getReceiptPath(donation.billNo, language);
 
     // Regenerate if file missing on disk
-    if (!fs.existsSync(targetPdfPath)) {
+    if (!isValidReceiptPDF(targetPdfPath)) {
+      fs.rmSync(targetPdfPath, { force: true });
       try {
         console.log(`[Public Share] PDF missing for bill #${donation.billNo}. Regenerating...`);
         await saveReceiptPDF({
@@ -143,29 +145,20 @@ app.get('/r/:token', async (req: Request, res: Response) => {
           date: donation.createdAt,
         }, language);
       } catch (genErr) {
-        console.warn(`[Public Share] PDF render unavailable, serving printable HTML receipt:`, genErr);
+        console.error(`[Public Share] PDF generation failed for bill #${donation.billNo}:`, genErr);
+        res.status(503).type('text/plain').send('English PDF generation failed. Please try again shortly.');
+        return;
       }
     }
 
-    if (fs.existsSync(targetPdfPath)) {
+    if (isValidReceiptPDF(targetPdfPath)) {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}_${language}.pdf"`);
       fs.createReadStream(targetPdfPath).pipe(res);
       return;
     }
 
-    // Show a readable receipt fallback without launching Chrome's print dialog.
-    const html = renderPrintableReceiptHTML({
-      billNo: donation.billNo,
-      donorName: donation.donorName,
-      phone: donation.phone,
-      amount: donation.amount,
-      paymentMode: donation.paymentMode,
-      note: donation.note,
-      date: donation.createdAt,
-    }, language, false);
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(html);
+    res.status(503).type('text/plain').send('English PDF generation did not produce a valid PDF.');
   } catch (error) {
     console.error('[Public Share Error]:', error);
     res.status(500).send('Error loading receipt');
