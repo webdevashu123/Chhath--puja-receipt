@@ -492,7 +492,7 @@ function Donate({
 
   return (
     <>
-      <TopBar title="New Donation" />
+      <TopBar title="New Donation" onLock={onLock} />
       <form className="screen-content donate-screen" onSubmit={submit}>
         <div className="intro-copy">
           <p className="eyebrow">Donation details</p>
@@ -822,10 +822,6 @@ function Receipt({
             <small>With gratitude and blessings</small>
           </div>
           <div className="signature-row">
-            <div>
-              <span className="signature">A. Prasad</span>
-              <small>Authorized signature</small>
-            </div>
             <div className="stamp">
               CPS
               <br />
@@ -1187,11 +1183,13 @@ function Records({
   onSelectDonation,
   showToast,
   onDataChanged,
+  onLock,
 }: {
   onDelete: (id: number) => Promise<void>;
   onSelectDonation: (donation: Donation) => void;
   showToast: (text: string) => void;
   onDataChanged: () => void;
+  onLock?: () => void;
 }) {
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
@@ -1237,7 +1235,7 @@ function Records({
 
   return (
     <>
-      <TopBar title="Donation Records" />
+      <TopBar title="Donation Records" onLock={onLock} />
       <main className="screen-content records-screen">
         <section className="records-summary">
           <div>
@@ -1412,7 +1410,13 @@ function Records({
   );
 }
 
-function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donation) => void }) {
+function SearchScreen({
+  onSelectDonation,
+  onLock,
+}: {
+  onSelectDonation: (donation: Donation) => void;
+  onLock?: () => void;
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<DonorProfile[]>([]);
   const [selectedDonor, setSelectedDonor] = useState<DonorProfile | null>(null);
@@ -1449,7 +1453,7 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
 
   return (
     <>
-      <TopBar title="Find a Donor" />
+      <TopBar title="Find a Donor" onLock={onLock} />
       <main className="screen-content search-screen">
         <div className="search-intro">
           <p className="eyebrow">Donor directory</p>
@@ -1619,8 +1623,13 @@ function SearchScreen({ onSelectDonation }: { onSelectDonation: (donation: Donat
 }
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(() => {
+    return sessionStorage.getItem("cps_app_unlocked") === "true";
+  });
   const [screen, setScreen] = useState<Screen>("home");
-  const [recordsUnlocked, setRecordsUnlocked] = useState(false);
+  const [recordsUnlocked, setRecordsUnlocked] = useState(() => {
+    return sessionStorage.getItem("cps_app_unlocked") === "true";
+  });
   const [pinGate, setPinGate] = useState(false);
   const [latestDonation, setLatestDonation] = useState<Donation | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -1631,6 +1640,15 @@ export default function App() {
   const showToast = (text: string) => {
     setToast(text);
     window.setTimeout(() => setToast(""), 2800);
+  };
+
+  const handleLock = async () => {
+    sessionStorage.removeItem("cps_app_unlocked");
+    await api.adminLogout().catch(() => {});
+    setAuthenticated(false);
+    setRecordsUnlocked(false);
+    setPinGate(false);
+    showToast("App locked with PIN");
   };
 
   const refreshDashboard = async () => {
@@ -1654,18 +1672,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    api.checkAdminAuth().then((isAuthed) => {
-      if (isAuthed) setRecordsUnlocked(true);
-    });
-    setDashboardLoading(true);
-    refreshDashboard();
-  }, []);
-
-  useEffect(() => {
-    if (recordsUnlocked) {
+    if (authenticated) {
       refreshDashboard();
     }
-  }, [recordsUnlocked]);
+  }, [authenticated, recordsUnlocked]);
 
   const navigate = (next: Screen) => {
     if (next === "records" && !recordsUnlocked) {
@@ -1693,7 +1703,23 @@ export default function App() {
 
   const appClass = useMemo(() => `app-shell screen-${screen}`, [screen]);
 
-  if (pinGate)
+  if (!authenticated) {
+    return (
+      <div className="app-frame">
+        <PinGate
+          appEntry
+          unlock={() => {
+            sessionStorage.setItem("cps_app_unlocked", "true");
+            setAuthenticated(true);
+            setRecordsUnlocked(true);
+            refreshDashboard();
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (pinGate) {
     return (
       <div className="app-frame">
         <PinGate
@@ -1706,6 +1732,7 @@ export default function App() {
         />
       </div>
     );
+  }
 
   return (
     <div className="app-frame">
@@ -1723,6 +1750,7 @@ export default function App() {
               goDonate={() => navigate("donate")}
               goRecords={() => navigate("records")}
               onSelectDonation={handleSelectDonation}
+              onLock={handleLock}
             />
           )
         )}
@@ -1734,6 +1762,7 @@ export default function App() {
               refreshDashboard();
             }}
             showToast={showToast}
+            onLock={handleLock}
           />
         )}
         {screen === "receipt" && latestDonation && (
@@ -1750,10 +1779,11 @@ export default function App() {
             onSelectDonation={handleSelectDonation}
             showToast={showToast}
             onDataChanged={refreshDashboard}
+            onLock={handleLock}
           />
         )}
         {screen === "search" && (
-          <SearchScreen onSelectDonation={handleSelectDonation} />
+          <SearchScreen onSelectDonation={handleSelectDonation} onLock={handleLock} />
         )}
         {screen !== "receipt" && <BottomNav screen={screen} navigate={navigate} />}
         {toast && (
