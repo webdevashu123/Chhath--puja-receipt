@@ -41,13 +41,24 @@ export async function restoreLatestSnapshot(databasePath: string): Promise<boole
     return false;
   }
 
-  const restorePath = path.join(os.tmpdir(), `chhath-restore-${process.pid}.db`);
+  // Keep the temporary restore file beside the database. Render mounts these
+  // paths on different filesystems, where rename(/tmp, dataDir) fails with EXDEV.
+  const restorePath = path.join(path.dirname(databasePath), `.app-restore-${process.pid}.db`);
   await pipeline(bucket.openDownloadStream(latest._id), fs.createWriteStream(restorePath));
   for (const suffix of ['-wal', '-shm', '-journal']) {
     fs.rmSync(`${databasePath}${suffix}`, { force: true });
   }
-  fs.rmSync(databasePath, { force: true });
-  fs.renameSync(restorePath, databasePath);
+  try {
+    fs.renameSync(restorePath, databasePath);
+  } catch (error) {
+    // Windows cannot replace an existing destination with rename; the server
+    // hasn't opened SQLite yet, so remove the old file and complete the swap.
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' && (error as NodeJS.ErrnoException).code !== 'EPERM') {
+      throw error;
+    }
+    fs.rmSync(databasePath, { force: true });
+    fs.renameSync(restorePath, databasePath);
+  }
   console.log(`[Database] Restored latest Atlas snapshot (${latest.uploadDate?.toISOString?.() || 'date unavailable'}).`);
   return true;
 }
