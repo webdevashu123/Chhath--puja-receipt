@@ -922,6 +922,7 @@ function PinGate({
 }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("Incorrect PIN. Please try again.");
   const [verifying, setVerifying] = useState(false);
 
   const press = async (value: string) => {
@@ -929,6 +930,7 @@ function PinGate({
     const next = pin + value;
     setPin(next);
     setError(false);
+    setErrorMessage("Incorrect PIN. Please try again.");
 
     if (next.length === 4) {
       setVerifying(true);
@@ -938,14 +940,13 @@ function PinGate({
           unlock();
         } else {
           setPin("");
+          setErrorMessage("Incorrect PIN. Please try again.");
           setError(true);
         }
-      } catch {
-        if (next === "2026") unlock();
-        else {
-          setPin("");
-          setError(true);
-        }
+      } catch (loginError) {
+        setPin("");
+        setErrorMessage(loginError instanceof Error ? loginError.message : "Admin login failed. Please try again.");
+        setError(true);
       } finally {
         setVerifying(false);
       }
@@ -983,7 +984,7 @@ function PinGate({
         ))}
       </div>
       <small className={`pin-error ${error ? "is-error" : ""}`}>
-        {error ? "Incorrect PIN. Please try again." : ""}
+        {error ? errorMessage : ""}
       </small>
       <div className="keypad">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"].map((key, index) =>

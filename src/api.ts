@@ -69,17 +69,22 @@ export const api = {
   },
 
   async adminLogin(pin: string): Promise<boolean> {
+    let res: Response;
     try {
-      const res = await fetch(`${API_BASE}/admin/login`, {
+      res = await fetch(`${API_BASE}/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ pin }),
       });
-      return res.ok;
     } catch {
-      return false;
+      throw new Error('Cannot reach the admin server. Check the connection and try again.');
     }
+
+    if (res.ok) return true;
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) return false;
+    throw new Error(data.error || `Admin login failed (${res.status}). Please try again.`);
   },
 
   async verifyPin(pin: string): Promise<boolean> {
