@@ -933,7 +933,7 @@ function PinGate({
         ))}
       </div>
       <small className={`pin-error ${error ? "is-error" : ""}`}>
-        {error ? "Incorrect PIN. Please try again." : "Default PIN: 2026"}
+        {error ? "Incorrect PIN. Please try again." : ""}
       </small>
       <div className="keypad">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"].map((key, index) =>
