@@ -9,7 +9,7 @@ Built with **React 19**, **Tailwind CSS v4**, **Node.js (Express 5)**, **SQLite 
 ## 📋 Architecture & Highlights
 
 - **Unified Single-Service App**: Express serves the React frontend (SPA) from `/dist` as static assets and powers all `/api/*` and `/r/:token` public endpoints.
-- **Relational SQLite Database (`./data/app.db`)**: High-performance WAL mode (`PRAGMA journal_mode = WAL`) with transactions ensuring zero race conditions.
+- **SQLite query engine with MongoDB Atlas persistence**: The current synchronous SQLite query layer remains local for compatibility. A consistent SQLite snapshot is uploaded to Atlas before each write API response, then restored on service startup. This keeps donation, donor, setting, counter, and audit data durable across Render Free restarts.
 - **Strictly Sequential Bill Numbers**: Atomic counter sequence starting at **1001** (`1001`, `1002`, `1003`...) handled inside an SQLite transaction. Guarantees no two simultaneous requests ever get the same bill number.
 - **Donor Matching**: Donors are identified by their unique 10-digit phone number. Existing donors are reused; names are updated only if previously empty.
 - **Official Bilingual A4 PDF Receipt Generator**:
@@ -54,6 +54,10 @@ JWT_SECRET=chhath-puja-samiti-super-secret-jwt-key-2026
 # Public Base URL for Share Links (/r/:token)
 PUBLIC_BASE_URL=http://localhost:5000
 
+# MongoDB Atlas (required in production; local development can omit it)
+MONGODB_URI=mongodb+srv://<db-user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
+MONGODB_DATABASE=chhath_puja
+
 # Optional path to system Chromium/Chrome binary (required in Docker/Linux VPS)
 CHROME_PATH=
 
@@ -97,6 +101,12 @@ npm run build
 npm start
 ```
 Open [http://localhost:5000](http://localhost:5000) in your browser.
+
+### Render Free + MongoDB Atlas
+
+Create an Atlas database user and allow the Render service to connect in the Atlas Network Access settings. In Render, open **Environment** and set `MONGODB_URI` to the Atlas connection string (URL-encode special characters in the password). `MONGODB_DATABASE` defaults to `chhath_puja`. Production startup intentionally fails when `MONGODB_URI` is missing or Atlas cannot be reached, so the app cannot silently accept writes to Render's temporary disk.
+
+Atlas stores SQLite snapshots in GridFS; the app uploads the current database at startup and after each write, retains the latest snapshot, and restores it before serving requests. Render's already-lost ephemeral data cannot be recovered by this migration.
 
 ---
 

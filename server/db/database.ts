@@ -1,6 +1,10 @@
 import Database, { type Database as DatabaseType } from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
+import dotenv from 'dotenv';
+import { restoreLatestSnapshot } from './mongoSnapshot.ts';
+
+dotenv.config({ path: path.resolve(import.meta.dirname, '../../.env') });
 
 const dataDir = path.resolve(import.meta.dirname, '../../data');
 if (!fs.existsSync(dataDir)) {
@@ -8,6 +12,7 @@ if (!fs.existsSync(dataDir)) {
 }
 
 export const dbPath = path.join(dataDir, 'app.db');
+await restoreLatestSnapshot(dbPath);
 const db: DatabaseType = new Database(dbPath);
 
 // Enable WAL mode and foreign keys for high performance and integrity
@@ -41,7 +46,11 @@ export function initDatabase(): void {
       name TEXT NOT NULL,
       name_normalized TEXT NOT NULL,
       phone TEXT NOT NULL UNIQUE,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      address TEXT NOT NULL DEFAULT '',
+      total_donated INTEGER NOT NULL DEFAULT 0,
+      donation_count INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS donations (
@@ -51,6 +60,15 @@ export function initDatabase(): void {
       bill_no TEXT NOT NULL UNIQUE,
       amount INTEGER NOT NULL CHECK(amount > 0),
       payment_mode TEXT NOT NULL CHECK(payment_mode IN ('Cash', 'Online', 'PhonePe', 'GPay', 'Cheque')),
+      name TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      mode TEXT NOT NULL DEFAULT 'Cash',
+      reference_no TEXT NOT NULL DEFAULT '',
+      date TEXT NOT NULL DEFAULT '',
+      time TEXT NOT NULL DEFAULT '',
+      timestamp INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'verified',
+      collector_name TEXT NOT NULL DEFAULT 'A. Prasad',
       note TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       deleted_at DATETIME DEFAULT NULL,
@@ -65,14 +83,90 @@ export function initDatabase(): void {
       value INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      description TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER,
+      bill_no TEXT,
+      details TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS reconciliations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_date TEXT NOT NULL,
+      mode_category TEXT NOT NULL,
+      system_amount REAL NOT NULL,
+      physical_or_bank_amount REAL NOT NULL,
+      discrepancy REAL NOT NULL,
+      status TEXT NOT NULL,
+      reconciled_by TEXT NOT NULL,
+      notes TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Add columns introduced by the current API to databases created by older app versions.
+  const migrations: Record<string, Record<string, string>> = {
+    donors: {
+      name_normalized: "TEXT NOT NULL DEFAULT ''",
+      address: "TEXT NOT NULL DEFAULT ''",
+      total_donated: 'INTEGER NOT NULL DEFAULT 0',
+      donation_count: 'INTEGER NOT NULL DEFAULT 0',
+      updated_at: 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+    },
+    donations: {
+      name_on_receipt: "TEXT NOT NULL DEFAULT ''",
+      bill_no: 'TEXT',
+      amount: 'INTEGER NOT NULL DEFAULT 0',
+      payment_mode: "TEXT NOT NULL DEFAULT 'Cash'",
+      name: "TEXT NOT NULL DEFAULT ''",
+      phone: "TEXT NOT NULL DEFAULT ''",
+      mode: "TEXT NOT NULL DEFAULT 'Cash'",
+      reference_no: "TEXT NOT NULL DEFAULT ''",
+      date: "TEXT NOT NULL DEFAULT ''",
+      time: "TEXT NOT NULL DEFAULT ''",
+      timestamp: 'INTEGER NOT NULL DEFAULT 0',
+      status: "TEXT NOT NULL DEFAULT 'verified'",
+      collector_name: "TEXT NOT NULL DEFAULT 'A. Prasad'",
+      note: "TEXT DEFAULT ''",
+      created_at: 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+      deleted_at: 'DATETIME DEFAULT NULL',
+      pdf_path: 'TEXT',
+      share_token: 'TEXT',
+      client_id: 'TEXT',
+    },
+  };
+
+  for (const [table, columns] of Object.entries(migrations)) {
+    const existingColumns = new Set(
+      (db.pragma(`table_info(${table})`) as { name: string }[]).map((column) => column.name)
+    );
+    for (const [column, definition] of Object.entries(columns)) {
+      if (!existingColumns.has(column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      }
+    }
+  }
+
+  db.exec(`
+
     CREATE INDEX IF NOT EXISTS idx_donors_phone ON donors(phone);
     CREATE INDEX IF NOT EXISTS idx_donors_name_normalized ON donors(name_normalized);
     CREATE INDEX IF NOT EXISTS idx_donations_donor_id ON donations(donor_id);
-    CREATE INDEX IF NOT EXISTS idx_donations_bill_no ON donations(bill_no);
     CREATE INDEX IF NOT EXISTS idx_donations_deleted_at ON donations(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations(created_at);
-    CREATE INDEX IF NOT EXISTS idx_donations_share_token ON donations(share_token);
-    CREATE INDEX IF NOT EXISTS idx_donations_client_id ON donations(client_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_donations_bill_no ON donations(bill_no) WHERE bill_no IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_donations_share_token ON donations(share_token) WHERE share_token IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_donations_client_id ON donations(client_id) WHERE client_id IS NOT NULL;
   `);
 
   // Initialize sequential counter starting at 1000 so the first bill number generated is 1001

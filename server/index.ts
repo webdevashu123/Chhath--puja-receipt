@@ -9,7 +9,8 @@ import dotenv from 'dotenv';
 
 dotenv.config({ path: path.resolve(import.meta.dirname, '../.env') });
 
-import db, { initDatabase } from './db/database.ts';
+import db, { dbPath, initDatabase } from './db/database.ts';
+import { persistSnapshot } from './db/mongoSnapshot.ts';
 import apiRouter from './routes/api.ts';
 import { apiRateLimiter } from './middleware/auth.ts';
 import { initBackupScheduler } from './services/backupService.ts';
@@ -20,6 +21,7 @@ const PORT = process.env.PORT || 5000;
 
 // Initialize Database & Background Schedulers
 initDatabase();
+await persistSnapshot(async (targetPath) => { await db.backup(targetPath); });
 initBackupScheduler();
 
 // Security & Production Middleware
@@ -41,6 +43,39 @@ app.use(express.json({ limit: '2mb' }));
 
 // Apply rate limiter to /api
 app.use('/api', apiRateLimiter);
+
+// Persist every API write to Atlas before returning success to the client.
+// This keeps the existing synchronous SQLite query layer intact while making
+// the durable copy live outside Render's ephemeral filesystem.
+app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    next();
+    return;
+  }
+
+  const send = res.send.bind(res);
+  let responseHandled = false;
+  res.send = ((body?: any) => {
+    if (responseHandled) return res;
+    responseHandled = true;
+    persistSnapshot(async (targetPath) => { await db.backup(targetPath); })
+      .then(() => send(body))
+      .catch((error) => {
+        console.error('[Database] Atlas snapshot failed; write response withheld:', error);
+        if (!res.headersSent) {
+          res.status(503).type('application/json');
+          send(JSON.stringify({
+            error: 'Database backup failed. Please retry; the change was not confirmed as saved.',
+          }));
+        } else {
+          res.end();
+        }
+      });
+    return res;
+  }) as typeof res.send;
+
+  next();
+});
 
 // Mount API routes
 app.use('/api', apiRouter);
