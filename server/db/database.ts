@@ -12,7 +12,7 @@ if (!fs.existsSync(dataDir)) {
 }
 
 export const dbPath = path.join(dataDir, 'app.db');
-await restoreLatestSnapshot(dbPath);
+export const restoredFromAtlas = await restoreLatestSnapshot(dbPath);
 const db: DatabaseType = new Database(dbPath);
 
 // Enable WAL mode and foreign keys for high performance and integrity

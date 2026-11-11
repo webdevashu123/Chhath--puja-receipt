@@ -108,6 +108,8 @@ Create an Atlas database user and allow the Render service to connect in the Atl
 
 Atlas stores SQLite snapshots in GridFS; the app uploads the current database at startup and after each write, retains the latest snapshot, and restores it before serving requests. Render's already-lost ephemeral data cannot be recovered by this migration.
 
+The repository also includes a GitHub Actions workflow that requests `/healthz` every 10 minutes to reduce Render Free spin-downs. This uses the monthly free instance hours and GitHub scheduled runs; GitHub can delay scheduled jobs, and Render can still restart or suspend Free services, so it cannot guarantee 24/7 uptime. A paid always-on host is the only dependable option for this requirement.
+
 ---
 
 ## 🐳 Docker Deployment

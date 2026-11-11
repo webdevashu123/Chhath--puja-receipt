@@ -31,14 +31,14 @@ async function connectMongo(): Promise<void> {
   console.log(`[Database] Connected to MongoDB Atlas database "${databaseName}".`);
 }
 
-export async function restoreLatestSnapshot(databasePath: string): Promise<void> {
+export async function restoreLatestSnapshot(databasePath: string): Promise<boolean> {
   await connectMongo();
-  if (!bucket || !mongoDb) return;
+  if (!bucket || !mongoDb) return false;
 
   const latest = await mongoDb.collection('sqliteSnapshots.files').find({}).sort({ uploadDate: -1 }).limit(1).next();
   if (!latest) {
     console.log('[Database] No Atlas snapshot found; initializing a new SQLite database.');
-    return;
+    return false;
   }
 
   const restorePath = path.join(os.tmpdir(), `chhath-restore-${process.pid}.db`);
@@ -49,6 +49,7 @@ export async function restoreLatestSnapshot(databasePath: string): Promise<void>
   fs.rmSync(databasePath, { force: true });
   fs.renameSync(restorePath, databasePath);
   console.log(`[Database] Restored latest Atlas snapshot (${latest.uploadDate?.toISOString?.() || 'date unavailable'}).`);
+  return true;
 }
 
 export function persistSnapshot(createSnapshot: (targetPath: string) => Promise<void>): Promise<void> {

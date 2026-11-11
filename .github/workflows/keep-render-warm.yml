@@ -1,0 +1,16 @@
+name: Keep Render Free service warm
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wake and check the app
+        run: curl --fail --silent --show-error --max-time 120 https://chhath-puja-receipt.onrender.com/healthz

@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 
 dotenv.config({ path: path.resolve(import.meta.dirname, '../.env') });
 
-import db, { dbPath, initDatabase } from './db/database.ts';
+import db, { dbPath, initDatabase, restoredFromAtlas } from './db/database.ts';
 import { persistSnapshot } from './db/mongoSnapshot.ts';
 import apiRouter from './routes/api.ts';
 import { apiRateLimiter } from './middleware/auth.ts';
@@ -21,7 +21,9 @@ const PORT = process.env.PORT || 5000;
 
 // Initialize Database & Background Schedulers
 initDatabase();
-await persistSnapshot(async (targetPath) => { await db.backup(targetPath); });
+if (!restoredFromAtlas) {
+  await persistSnapshot(async (targetPath) => { await db.backup(targetPath); });
+}
 initBackupScheduler();
 
 // Security & Production Middleware
@@ -40,6 +42,11 @@ app.use(cors({
 app.use(compression());
 app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
+
+// Lightweight endpoint for platform health checks and the free-tier wake-up monitor.
+app.get('/healthz', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 // Apply rate limiter to /api
 app.use('/api', apiRateLimiter);
