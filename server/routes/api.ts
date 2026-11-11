@@ -60,10 +60,9 @@ router.post('/admin/login', loginRateLimiter, async (req: Request, res: Response
 
     const { pin } = parseResult.data;
     const adminHash = process.env.ADMIN_PIN_HASH;
-
     if (!adminHash) {
-      console.error('[Admin Login] ADMIN_PIN_HASH environment variable is not configured');
-      res.status(500).json({ error: 'Server authentication configuration missing' });
+      console.error('[Admin Login] ADMIN_PIN_HASH is missing. Set it in the server environment.');
+      res.status(500).json({ error: 'Server authentication configuration missing. Set ADMIN_PIN_HASH on the backend.' });
       return;
     }
 

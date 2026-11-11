@@ -7,7 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(import.meta.dirname, '../.env') });
 
 import db, { initDatabase } from './db/database.ts';
 import apiRouter from './routes/api.ts';
