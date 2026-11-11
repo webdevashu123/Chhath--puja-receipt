@@ -321,7 +321,8 @@ router.get('/donations', requireAdminAuth, (req: Request, res: Response) => {
 
 router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => {
   try {
-    const donationId = parseInt(req.params.id, 10);
+    const language = req.query.lang === 'hi' ? 'hi' : 'en';
+    const donationId = parseInt(String(req.params.id), 10);
     if (!donationId) {
       res.status(400).json({ error: 'Invalid donation ID' });
       return;
@@ -348,7 +349,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
       return;
     }
 
-    const targetPdfPath = getReceiptPath(donation.billNo);
+    const targetPdfPath = getReceiptPath(donation.billNo, language);
 
     // If file missing on disk, regenerate on-the-fly
     if (!fs.existsSync(targetPdfPath)) {
@@ -362,7 +363,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
           paymentMode: donation.paymentMode,
           note: donation.note,
           date: donation.createdAt,
-        });
+        }, language);
       } catch (genErr) {
         console.warn(`[Receipt] PDF generation notice for bill #${donation.billNo}:`, genErr);
       }
@@ -370,7 +371,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
 
     if (fs.existsSync(targetPdfPath)) {
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}.pdf"`);
+      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}_${language}.pdf"`);
       fs.createReadStream(targetPdfPath).pipe(res);
       return;
     }
@@ -384,7 +385,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
       paymentMode: donation.paymentMode,
       note: donation.note,
       date: donation.createdAt,
-    });
+    }, language);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (error) {
@@ -395,7 +396,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
 
 router.get('/donations/:id/receipt.html', (req: Request, res: Response) => {
   try {
-    const donationId = parseInt(req.params.id, 10);
+    const donationId = parseInt(String(req.params.id), 10);
     if (!donationId) {
       res.status(400).send('Invalid donation ID');
       return;
@@ -445,7 +446,7 @@ router.get('/donations/:id/receipt.html', (req: Request, res: Response) => {
 
 router.delete('/donations/:id', requireAdminAuth, (req: Request, res: Response) => {
   try {
-    const donationId = parseInt(req.params.id, 10);
+    const donationId = parseInt(String(req.params.id), 10);
     if (!donationId) {
       res.status(400).json({ error: 'Invalid donation ID' });
       return;

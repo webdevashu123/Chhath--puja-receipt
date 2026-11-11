@@ -84,7 +84,8 @@ app.get('/r/:token', async (req: Request, res: Response) => {
       return;
     }
 
-    const targetPdfPath = getReceiptPath(donation.billNo);
+    const language = req.query.lang === 'hi' ? 'hi' : 'en';
+    const targetPdfPath = getReceiptPath(donation.billNo, language);
 
     // Regenerate if file missing on disk
     if (!fs.existsSync(targetPdfPath)) {
@@ -98,7 +99,7 @@ app.get('/r/:token', async (req: Request, res: Response) => {
           paymentMode: donation.paymentMode,
           note: donation.note,
           date: donation.createdAt,
-        });
+        }, language);
       } catch (genErr) {
         console.warn(`[Public Share] PDF render unavailable, serving printable HTML receipt:`, genErr);
       }
@@ -106,7 +107,7 @@ app.get('/r/:token', async (req: Request, res: Response) => {
 
     if (fs.existsSync(targetPdfPath)) {
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}.pdf"`);
+      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}_${language}.pdf"`);
       fs.createReadStream(targetPdfPath).pipe(res);
       return;
     }
@@ -120,7 +121,7 @@ app.get('/r/:token', async (req: Request, res: Response) => {
       paymentMode: donation.paymentMode,
       note: donation.note,
       date: donation.createdAt,
-    });
+    }, language);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (error) {

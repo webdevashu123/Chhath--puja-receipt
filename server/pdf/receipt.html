@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{language}}">
 <head>
 <meta charset="UTF-8" />
 <title>Donation Receipt {{bill_no}}</title>
@@ -25,12 +25,14 @@
     --cream:#FFF8F1; --cream-2:#FFEEDB;
     --ink:#1b2a3a; --muted:#6b7a89;
   }
-  /* The canonical receipt is intentionally English-only. */
-  .lbl .h,.header .hi-title,.header .hi-place,.title .hi,.amount .lbl .h,
-  .amount .words .hi,.thanks .hi1,.thanks .hi2,.fine span,.sigbox .h{display:none!important;}
-  .field .v > span{display:none!important;}
-  .lbl{flex-direction:column;}
-  .amount .words{flex-direction:column;}
+  body.lang-en .lbl .h,body.lang-en .hi-title,body.lang-en .hi-place-hi,
+  body.lang-en .title .hi,body.lang-en .amount .words .hi,body.lang-en .thanks .hi1,
+  body.lang-en .thanks .hi2,body.lang-en .fine span,body.lang-en .mode-hi,
+  body.lang-en .blessing-hi,body.lang-en .footer .jai-hi,body.lang-en .paid-hi,body.lang-en .seal-hi{display:none!important;}
+  body.lang-hi .lbl .e,body.lang-hi .en-title,body.lang-hi .hi-place-en,
+  body.lang-hi .title .en,body.lang-hi .amount .words .en,body.lang-hi .thanks .t-en,
+  body.lang-hi .thanks .en,body.lang-hi .fine b,body.lang-hi .mode-en,
+  body.lang-hi .blessing-en,body.lang-hi .footer .jai-en,body.lang-hi .paid-en,body.lang-hi .seal-en{display:none!important;}
   @page{ size:A4; margin:0; }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ width:210mm; height:297mm; }
@@ -149,7 +151,7 @@
   .footer .sm{ font-size:7.6pt; color:#ffe6bd; margin-top:.8mm; letter-spacing:.15mm; font-family:'Hind','Poppins',sans-serif; }
 </style>
 </head>
-<body>
+<body class="{{language_class}}">
 <!-- ===== Reusable SVGs ===== -->
 <svg width="0" height="0" style="position:absolute">
   <defs>
@@ -196,10 +198,10 @@
 
   <!-- ===== Header ===== -->
   <div class="header">
-    <div class="blessing">Jai Chhathi Maiya</div>
+    <div class="blessing"><span class="blessing-en">Jai Chhathi Maiya</span><span class="blessing-hi">जय छठी मैया</span></div>
     <div class="en-title">Chhath Puja Samiti</div>
     <div class="hi-title">छठ पूजा समिति</div>
-    <div class="hi-place">Yogidih, Dudhari &nbsp;•&nbsp; {{year}}</div>
+    <div class="hi-place"><span class="hi-place-en">Yogidih, Dudhari &nbsp;•&nbsp; {{year}}</span><span class="hi-place-hi">योगीडीह, दुधारी &nbsp;•&nbsp; {{year}}</span></div>
     <div class="toran"><svg preserveAspectRatio="none" viewBox="0 0 600 24"><rect width="600" height="24" fill="url(#toran2)"/></svg></div>
   </div>
   <div class="badge"><svg viewBox="0 0 200 200"><use href="#sun"/></svg></div>
@@ -230,7 +232,7 @@
       </div>
       <div class="field">
         <div class="lbl"><span class="h">भुगतान का माध्यम</span><span class="e">Payment Mode</span></div>
-        <div class="v en">{{mode_en}} <span style="font-family:'Hind',sans-serif;font-weight:600;font-size:11pt;color:var(--saffron-deep)">/ {{mode_hi}}</span></div>
+        <div class="v en"><span class="mode-en">{{mode_en}}</span><span class="mode-hi">{{mode_hi}}</span></div>
       </div>
       {{#note}}
       <div class="field full">
@@ -268,25 +270,22 @@
       <circle cx="100" cy="100" r="94" fill="none" stroke="#1d4f91" stroke-width="4"/>
       <circle cx="100" cy="100" r="88" fill="none" stroke="#1d4f91" stroke-width="1.4"/>
       <circle cx="100" cy="100" r="52" fill="none" stroke="#1d4f91" stroke-width="2"/>
-      <text font-family="Poppins, Hind" font-weight="700" font-size="12" fill="#1d4f91" letter-spacing=".6">
-        <textPath href="#ring" startOffset="0">• CHHATH PUJA SAMITI • छठ पूजा समिति • {{year}} •</textPath>
+      <text class="seal-en" font-family="Poppins, Hind" font-weight="700" font-size="12" fill="#1d4f91" letter-spacing=".6">
+        <textPath href="#ring" startOffset="0">• CHHATH PUJA SAMITI • {{year}} •</textPath>
       </text>
-      <text x="100" y="100" text-anchor="middle" font-family="Poppins" font-weight="700" font-size="17" fill="#1d4f91" letter-spacing="1.5">PAID</text>
-      <text x="100" y="124" text-anchor="middle" font-family="Tiro, Hind" font-size="22" fill="#1d4f91">प्राप्त</text>
+      <text class="seal-hi" font-family="Hind" font-weight="700" font-size="12" fill="#1d4f91" letter-spacing=".6">
+        <textPath href="#ring" startOffset="0">• छठ पूजा समिति • {{year}} •</textPath>
+      </text>
+      <text class="paid-en" x="100" y="100" text-anchor="middle" font-family="Poppins" font-weight="700" font-size="17" fill="#1d4f91" letter-spacing="1.5">PAID</text>
+      <text class="paid-hi" x="100" y="100" text-anchor="middle" font-family="Tiro, Hind" font-size="16" fill="#1d4f91">प्राप्त</text>
     </svg>
     <div class="fine"><b>This is a computer-generated receipt</b><span>यह कंप्यूटर द्वारा तैयार की गई रसीद है</span></div>
-    <div class="sigbox">
-      <div class="line"></div>
-      <div class="e">Authorized Signatory</div>
-      <div class="h">अधिकृत हस्ताक्षर</div>
-      <div class="org">Chhath Puja Samiti</div>
-    </div>
   </div>
 
   <!-- ===== Footer ===== -->
   <div class="footer">
     <div class="toran-top"><svg preserveAspectRatio="none" viewBox="0 0 600 24"><rect width="600" height="24" fill="url(#toran)"/></svg></div>
-    <div class="jai">Jai Chhathi Maiya!</div>
+    <div class="jai"><span class="jai-en">Jai Chhathi Maiya!</span><span class="jai-hi">जय छठी मैया!</span></div>
   </div>
   </div><!-- /.sheet -->
 </div>

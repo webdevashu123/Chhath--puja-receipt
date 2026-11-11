@@ -36,7 +36,7 @@ export function wordsEN(n: number): string {
   const th = Math.floor(n / 1e3); n %= 1e3;
   if (cr) parts.push(en3(cr) + ' Crore');
   if (lk) parts.push(en2(lk) + ' Lakh');
-  if (th) parts.push(en2(th) + ' Thousand');
+  if (th) parts.push(en3(th) + ' Thousand');
   if (n) parts.push(en3(n));
   return parts.join(' ');
 }
@@ -58,30 +58,23 @@ export function wordsHI(n: number): string {
   const th = Math.floor(n / 1e3); n %= 1e3;
   if (cr) parts.push(hi3(cr) + ' करोड़');
   if (lk) parts.push(HI99[lk] + ' लाख');
-  if (th) parts.push(HI99[th] + ' हज़ार');
+  if (th) parts.push(hi3(th) + ' हज़ार');
   if (n) parts.push(hi3(n));
   return parts.join(' ');
 }
 
-const fmtDate = (d: unknown) =>
-  new Date(d as string | number | Date).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Kolkata',
-  });
+const fmtAmount = (n: unknown, language: ReceiptLanguage) =>
+  Number(n).toLocaleString(language === 'hi' ? 'hi-IN' : 'en-IN');
 
-const fmtAmount = (n: unknown) => Number(n).toLocaleString('en-IN');
-
-// ---------- Template Caching with Base64 Embedded Fonts ----------
-let cachedTemplate: string | null = null;
-function loadTemplate(): string {
-  if (cachedTemplate) return cachedTemplate;
+// ---------- Language-specific template caching with embedded fonts ----------
+export type ReceiptLanguage = 'en' | 'hi';
+const cachedTemplates: Partial<Record<ReceiptLanguage, string>> = {};
+function loadTemplate(language: ReceiptLanguage): string {
+  if (cachedTemplates[language]) return cachedTemplates[language]!;
   let html = fs.readFileSync(TEMPLATE_PATH, 'utf8');
   html = html.replace(/url\(fonts\/([^)]+)\)/g, (_, f) => {
-    // The receipt is English-only; embed just the Latin font faces to keep
-    // generation and the resulting PDF small and quick.
-    if (!String(f).includes('-latin-')) return `url('')`;
+    const isDevanagari = String(f).includes('-devanagari-');
+    if (language === 'en' && isDevanagari) return `url('')`;
     const fontFile = path.join(FONT_DIR, f);
     if (!fs.existsSync(fontFile)) {
       console.warn(`[PDF Warning] Font file not found: ${fontFile}`);
@@ -90,7 +83,7 @@ function loadTemplate(): string {
     const b64 = fs.readFileSync(fontFile).toString('base64');
     return `url(data:font/woff2;base64,${b64})`;
   });
-  return (cachedTemplate = html);
+  return (cachedTemplates[language] = html);
 }
 
 export interface ReceiptData {
@@ -103,27 +96,31 @@ export interface ReceiptData {
   date?: string | Date | number;
 }
 
-export function fillTemplate(d: ReceiptData): string {
+export function fillTemplate(d: ReceiptData, language: ReceiptLanguage = 'en'): string {
   const amount = Math.round(Number(d.amount));
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid amount');
   const modeKey = String(d.paymentMode || '').toLowerCase();
   const mode = MODES[modeKey] || { hi: esc(d.paymentMode), en: esc(d.paymentMode) };
 
   const vals: Record<string, string> = {
+    language,
+    language_class: `lang-${language}`,
     bill_no: esc(d.billNo),
-    date: esc(fmtDate(d.date || Date.now())),
+    date: esc(new Date(d.date || Date.now()).toLocaleDateString(language === 'hi' ? 'hi-IN' : 'en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata',
+    })),
     donor_name: esc(d.donorName),
     phone: esc(d.phone),
     mode_hi: mode.hi,
     mode_en: mode.en,
-    amount: fmtAmount(amount),
+    amount: fmtAmount(amount, language),
     amount_words_en: wordsEN(amount),
     amount_words_hi: wordsHI(amount),
     note: esc(d.note || ''),
     year: '2026',
   };
 
-  let html = loadTemplate();
+  let html = loadTemplate(language);
   html = html.replace(/\{\{#note\}\}([\s\S]*?)\{\{\/note\}\}/g, vals.note ? '$1' : '');
   return html.replace(/\{\{(\w+)\}\}/g, (_, k) => (k in vals ? vals[k] : ''));
 }
@@ -131,8 +128,8 @@ export function fillTemplate(d: ReceiptData): string {
 /**
  * Returns printable self-contained HTML with embedded fonts and automatic print trigger.
  */
-export function renderPrintableReceiptHTML(data: ReceiptData): string {
-  const html = fillTemplate(data);
+export function renderPrintableReceiptHTML(data: ReceiptData, language: ReceiptLanguage = 'en'): string {
+  const html = fillTemplate(data, language);
   const autoPrintScript = `
 <script>
   window.addEventListener('load', function() {
@@ -254,9 +251,9 @@ export async function getBrowser(): Promise<Browser> {
 /**
  * Renders A4 PDF buffer with concurrency limit and Puppeteer page evaluation.
  */
-export async function renderReceiptPDF(data: ReceiptData): Promise<Buffer> {
+export async function renderReceiptPDF(data: ReceiptData, language: ReceiptLanguage = 'en'): Promise<Buffer> {
   return renderQueue.run(async () => {
-    const html = fillTemplate(data);
+    const html = fillTemplate(data, language);
 
     const renderAttempt = async (): Promise<Buffer> => {
       const browser = await getBrowser();
@@ -296,15 +293,13 @@ export async function renderReceiptPDF(data: ReceiptData): Promise<Buffer> {
  * Saves generated PDF to ./data/receipts/<billNo>.pdf.
  * Returns the absolute path on disk.
  */
-export async function saveReceiptPDF(data: ReceiptData): Promise<string> {
-  const pdfBuffer = await renderReceiptPDF(data);
-  const filePath = path.join(RECEIPTS_DIR, `${data.billNo}.pdf`);
+export async function saveReceiptPDF(data: ReceiptData, language: ReceiptLanguage = 'en'): Promise<string> {
+  const pdfBuffer = await renderReceiptPDF(data, language);
+  const filePath = getReceiptPath(data.billNo, language);
   fs.writeFileSync(filePath, pdfBuffer);
   return filePath;
 }
 
-export function getReceiptPath(billNo: string | number): string {
-  // Version the cache path so receipts created with the previous bilingual
-  // template are regenerated once with the English-only layout.
-  return path.join(RECEIPTS_DIR, `receipt_${billNo}_en.pdf`);
+export function getReceiptPath(billNo: string | number, language: ReceiptLanguage = 'en'): string {
+  return path.join(RECEIPTS_DIR, `receipt_${billNo}_${language}_v2.pdf`);
 }
