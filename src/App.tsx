@@ -678,7 +678,6 @@ function Receipt({
   const startPdfDownload = () => {
     const link = document.createElement("a");
     link.href = downloadPdfUrl;
-    link.download = `receipt_${billNumber}_${pdfLanguage}.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -729,14 +728,6 @@ function Receipt({
     } finally {
       setSharing(false);
     }
-  };
-
-  const handleOpenPdf = () => {
-    window.open(pdfUrl, "_blank");
-  };
-
-  const handlePrint = () => {
-    window.print();
   };
 
   return (
@@ -818,29 +809,20 @@ function Receipt({
             <button type="button" className={pdfLanguage === "en" ? "selected" : ""} aria-pressed={pdfLanguage === "en"} onClick={() => setPdfLanguage("en")}>English PDF</button>
             <button type="button" className={pdfLanguage === "hi" ? "selected" : ""} aria-pressed={pdfLanguage === "hi"} onClick={() => setPdfLanguage("hi")}>हिंदी PDF</button>
           </div>
-          <a
-            className="primary-button"
-            href={downloadPdfUrl}
-            download={`receipt_${billNumber}_${pdfLanguage}.pdf`}
-            onClick={() => showToast("Starting PDF download…")}
-          >
-            <Icon name="download" size={19} />
-            Download {pdfLanguage === "hi" ? "Hindi" : "English"} PDF
+          <a className="primary-button" href={pdfUrl} target="_blank" rel="noreferrer">
+            <Icon name="file" size={19} />
+            Open {pdfLanguage === "hi" ? "Hindi" : "English"} PDF
           </a>
           <div>
             <button className="secondary-button whatsapp" onClick={shareWhatsApp} disabled={sharing}>
               <Icon name="share" size={18} />
               {sharing ? "Sharing…" : `Share ${pdfLanguage === "hi" ? "Hindi" : "English"} PDF`}
             </button>
-            <button className="secondary-button" onClick={handleOpenPdf}>
+            <a className="secondary-button" href={downloadPdfUrl}>
               <Icon name="file" size={18} />
-              Open {pdfLanguage === "hi" ? "Hindi" : "English"} PDF
-            </button>
+              Download {pdfLanguage === "hi" ? "Hindi" : "English"} PDF
+            </a>
           </div>
-          <button className="secondary-button" onClick={handlePrint} style={{ width: "100%", justifyContent: "center" }}>
-            <Icon name="print" size={18} />
-            Print Receipt
-          </button>
           <button className="ghost-button" onClick={onNew}>
             <Icon name="plus" size={18} />
             New Donation

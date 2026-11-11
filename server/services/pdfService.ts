@@ -128,8 +128,13 @@ export function fillTemplate(d: ReceiptData, language: ReceiptLanguage = 'en'): 
 /**
  * Returns printable self-contained HTML with embedded fonts and automatic print trigger.
  */
-export function renderPrintableReceiptHTML(data: ReceiptData, language: ReceiptLanguage = 'en'): string {
+export function renderPrintableReceiptHTML(
+  data: ReceiptData,
+  language: ReceiptLanguage = 'en',
+  autoPrint = true,
+): string {
   const html = fillTemplate(data, language);
+  if (!autoPrint) return html;
   const autoPrintScript = `
 <script>
   window.addEventListener('load', function() {

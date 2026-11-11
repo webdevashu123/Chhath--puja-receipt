@@ -33,7 +33,7 @@
   body.lang-hi .title .en,body.lang-hi .amount .words .en,body.lang-hi .thanks .t-en,
   body.lang-hi .thanks .en,body.lang-hi .fine b,body.lang-hi .mode-en,
   body.lang-hi .blessing-en,body.lang-hi .footer .jai-en,body.lang-hi .paid-en,body.lang-hi .seal-en{display:none!important;}
-  @page{ size:A4; margin:0; }
+  @page{ size:210mm 297mm; margin:0; }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ width:210mm; height:297mm; }
   body{
@@ -59,7 +59,7 @@
 
   /* ---------- Header ---------- */
   .header{
-    position:relative; z-index:2; height:46mm; flex-shrink:0; padding:5mm 12mm 0; text-align:center; color:#fff;
+    position:relative; z-index:2; height:50mm; flex-shrink:0; padding:5.5mm 12mm 0; text-align:center; color:#fff;
     background:
       radial-gradient(ellipse 85% 70% at 50% 118%, #FFD36B 0, var(--gold) 18%, var(--saffron) 42%, rgba(13,59,102,0) 72%),
       linear-gradient(180deg, var(--navy-deep) 0%, var(--navy) 55%, #1d5a94 100%);
@@ -81,7 +81,7 @@
   .badge svg{ width:18.5mm; height:18.5mm; }
 
   /* ---------- Title ---------- */
-  .title{ position:relative; z-index:2; text-align:center; margin-top:16mm; flex-shrink:0; }
+  .title{ position:relative; z-index:2; text-align:center; margin-top:19mm; flex-shrink:0; }
   .title .en{ font-family:'Poppins',sans-serif; font-weight:700; font-size:18pt; color:var(--navy); line-height:1.1; letter-spacing:.4mm; }
   .title .hi{ font-family:'Tiro','Hind',serif; font-size:14pt; color:var(--saffron); margin-top:.6mm; }
   .title .rule{ display:flex; align-items:center; justify-content:center; gap:3mm; margin-top:1.8mm; }
@@ -89,7 +89,7 @@
   .title .rule b{ display:block; width:2.4mm; height:2.4mm; background:var(--saffron); transform:rotate(45deg); }
 
   /* ---------- Meta pills ---------- */
-  .meta{ position:relative; z-index:2; display:flex; justify-content:center; gap:7mm; margin-top:3mm; padding:0 14mm; flex-shrink:0; }
+  .meta{ position:relative; z-index:2; display:flex; justify-content:center; gap:7mm; margin-top:5mm; padding:0 14mm; flex-shrink:0; }
   .pill{ flex:1; max-width:78mm; display:flex; align-items:center; justify-content:space-between; gap:4mm;
          padding:1.6mm 5mm; border-radius:10mm; background:#fff; border:0.35mm solid var(--gold);
          box-shadow:0 1mm 2.5mm rgba(13,59,102,.08); }
@@ -99,19 +99,19 @@
   .pill .val{ font-family:'Poppins',sans-serif; font-weight:700; font-size:12pt; color:var(--navy); white-space:nowrap; }
 
   /* ---------- Details card ---------- */
-  .card{ position:relative; z-index:2; margin:3mm 14mm 0; padding:3mm 6.5mm; flex-shrink:0; border-radius:4mm; background:#fff;
+  .card{ position:relative; z-index:2; margin:5mm 14mm 0; padding:5mm 7mm; flex-shrink:0; border-radius:4mm; background:#fff;
          border:0.35mm solid #f1dcc0; box-shadow:0 1.5mm 5mm rgba(13,59,102,.09); }
   .card::before{ content:''; position:absolute; left:0; top:6mm; bottom:6mm; width:1.3mm; border-radius:0 1mm 1mm 0; background:linear-gradient(180deg,var(--saffron),var(--gold)); }
-  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:2mm 7mm; }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:3.5mm 7mm; }
   .field.full{ grid-column:1 / -1; }
-  .field .v{ margin-top:.8mm; font-weight:700; font-size:14pt; color:var(--navy); line-height:1.25; word-break:break-word; padding-bottom:1.2mm; border-bottom:0.3mm dashed #e4cfae; }
+  .field .v{ margin-top:1mm; font-weight:700; font-size:15pt; color:var(--navy); line-height:1.3; word-break:break-word; padding-bottom:1.6mm; border-bottom:0.3mm dashed #e4cfae; }
   .field .v.en{ font-family:'Poppins','Hind',sans-serif; font-weight:600; font-size:13pt; }
   .field .v.note{ font-weight:400; font-size:10.5pt; color:var(--ink); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 
   /* ---------- Amount hero ---------- */
-  .amount{ position:relative; z-index:2; margin:3mm 14mm 0; flex-shrink:0; border-radius:4.5mm; padding:1.8mm;
+  .amount{ position:relative; z-index:2; margin:5mm 14mm 0; flex-shrink:0; border-radius:4.5mm; padding:2.4mm;
            background:linear-gradient(135deg,var(--gold),var(--saffron)); box-shadow:0 2mm 6mm rgba(242,92,5,.28); }
-  .amount .in{ border-radius:3.2mm; padding:3.4mm 7mm; color:#fff; position:relative; overflow:hidden;
+  .amount .in{ border-radius:3.2mm; padding:5mm 8mm; color:#fff; position:relative; overflow:hidden;
            background:radial-gradient(circle at 92% 18%, rgba(244,185,66,.38) 0, rgba(244,185,66,0) 38%), linear-gradient(135deg,var(--navy-deep),var(--navy)); }
   .amount .in::after{ content:''; position:absolute; inset:2mm; border:0.3mm dashed rgba(244,185,66,.7); border-radius:2.2mm; pointer-events:none; }
   .amount .top{ display:flex; justify-content:space-between; align-items:flex-end; gap:6mm; }
@@ -119,12 +119,12 @@
   .amount .lbl .e{ color:var(--gold); font-size:9.5pt; }
   .amount .num{ font-family:'Poppins','Hind',sans-serif; font-weight:700; font-size:31pt; line-height:1; color:var(--gold); letter-spacing:.2mm; white-space:nowrap; }
   .amount .num small{ font-size:17pt; color:#ffe9c2; font-weight:600; margin-left:1mm; }
-  .amount .words{ margin-top:2.8mm; padding-top:2.4mm; border-top:0.3mm solid rgba(255,255,255,.22); display:flex; flex-direction:column-reverse; }
+  .amount .words{ margin-top:4mm; padding-top:3.5mm; border-top:0.3mm solid rgba(255,255,255,.22); display:flex; flex-direction:column-reverse; }
   .amount .words .hi{ font-family:'Tiro','Hind',serif; font-size:11.5pt; color:#ffe9c2; line-height:1.4; margin-top:.8mm; }
   .amount .words .en{ font-family:'Poppins',sans-serif; font-weight:500; font-size:10pt; color:#fff; letter-spacing:.2mm; }
 
   /* ---------- Thanks ---------- */
-  .thanks{ position:relative; z-index:2; text-align:center; margin:2.6mm 16mm 0; flex-shrink:0; }
+  .thanks{ position:relative; z-index:2; text-align:center; margin:5mm 16mm 0; flex-shrink:0; }
   .thanks .t-en{ font-family:'Poppins',sans-serif; font-weight:600; font-size:12.5pt; color:var(--navy); }
   .thanks .hi1{ font-family:'Tiro','Hind',serif; font-size:12.5pt; color:var(--saffron-deep); margin-top:.3mm; }
   .thanks .hi2{ font-size:9.5pt; color:var(--ink); margin-top:1mm; line-height:1.5; }
@@ -132,7 +132,7 @@
 
   /* ---------- Signature row ---------- */
   .sign{ position:relative; z-index:4; margin:auto 15mm 2.5mm; padding-top:1mm; display:flex; justify-content:space-between; align-items:flex-end; flex-shrink:0; }
-  .stamp{ width:23mm; height:23mm; transform:rotate(-9deg); opacity:.9; margin-bottom:-1mm; }
+  .stamp{ width:28mm; height:28mm; transform:rotate(-9deg); opacity:.9; margin-bottom:-1mm; }
   .sigbox{ width:62mm; text-align:center; }
   .sigbox .line{ border-top:0.4mm solid var(--navy); margin-bottom:1.6mm; }
   .sigbox .h{ font-weight:600; font-size:9pt; color:var(--muted); }
@@ -140,7 +140,7 @@
   .sigbox .org{ font-family:'Hind','Poppins',sans-serif; font-size:7.6pt; color:var(--saffron-deep); margin-top:.6mm; font-weight:600; }
 
   /* ---------- Footer ---------- */
-  .footer{ position:relative; z-index:4; flex-shrink:0; height:15mm; color:#fff; text-align:center; display:flex; flex-direction:column; justify-content:center; padding-top:2mm;
+  .footer{ position:relative; z-index:4; flex-shrink:0; height:18mm; color:#fff; text-align:center; display:flex; flex-direction:column; justify-content:center; padding-top:2mm;
            background:linear-gradient(180deg,var(--saffron) 0%,var(--saffron-deep) 100%); }
   .footer .toran-top{ position:absolute; left:0; right:0; top:-0.1mm; height:4.5mm; transform:scaleY(-1); }
   .footer .toran-top svg{ width:100%; height:100%; display:block; }

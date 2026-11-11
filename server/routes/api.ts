@@ -376,7 +376,12 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
       return;
     }
 
-    // High-fidelity printable HTML fallback with embedded Indic fonts & auto-print trigger
+    if (req.query.download === '1') {
+      res.status(503).type('text/plain').send('The receipt PDF could not be generated. Please try Open PDF again in a moment.');
+      return;
+    }
+
+    // Show the receipt fallback without launching Chrome's print dialog.
     const html = renderPrintableReceiptHTML({
       billNo: donation.billNo,
       donorName: donation.donorName,
@@ -385,7 +390,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
       paymentMode: donation.paymentMode,
       note: donation.note,
       date: donation.createdAt,
-    }, language);
+    }, language, false);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (error) {
