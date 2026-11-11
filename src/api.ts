@@ -65,10 +65,42 @@ export interface ReconciliationRecord {
 const API_BASE = '/api';
 
 export const api = {
+  // Fast Local Storage Caches
+  getCachedStats(): Stats | null {
+    try {
+      const data = localStorage.getItem('cps_cached_stats');
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  getCachedDonations(): Donation[] | null {
+    try {
+      const data = localStorage.getItem('cps_cached_donations');
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async pingServer(): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/health`);
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
   async getStats(): Promise<Stats> {
     const res = await fetch(`${API_BASE}/stats`);
     if (!res.ok) throw new Error('Failed to load stats');
-    return res.json();
+    const data = await res.json();
+    try {
+      localStorage.setItem('cps_cached_stats', JSON.stringify(data));
+    } catch {}
+    return data;
   },
 
   async getDonations(params: {
@@ -87,7 +119,13 @@ export const api = {
 
     const res = await fetch(`${API_BASE}/donations?${query.toString()}`);
     if (!res.ok) throw new Error('Failed to load donations');
-    return res.json();
+    const data = await res.json();
+    if (!params.search && (!params.filter || params.filter === 'All')) {
+      try {
+        localStorage.setItem('cps_cached_donations', JSON.stringify(data.items.slice(0, 10)));
+      } catch {}
+    }
+    return data;
   },
 
   async getDonation(id: number): Promise<Donation> {

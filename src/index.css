@@ -1709,3 +1709,133 @@
   background: #ffe2c6;
 }
 
+/* Festive Chhath Puja Theme Loader */
+.theme-loader-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: 32px 20px;
+  text-align: center;
+}
+.theme-loader-full {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: radial-gradient(circle at 50% 35%, #fffbf5 0%, #f6ebe1 75%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.theme-diya-box {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+.theme-sun-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px dashed rgba(244, 185, 66, 0.45);
+  animation: theme-spin 12s linear infinite;
+}
+.theme-sun-aura {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(244, 185, 66, 0.35) 0%, rgba(242, 92, 5, 0.15) 55%, transparent 75%);
+  animation: theme-pulse 2s infinite ease-in-out;
+}
+.theme-sun-icon {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f25c05 0%, #d94d00 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 26px;
+  box-shadow: 0 10px 24px rgba(242, 92, 5, 0.3);
+}
+.theme-flame-flicker {
+  position: absolute;
+  top: -8px;
+  width: 13px;
+  height: 18px;
+  background: linear-gradient(to top, #f4b942, #fff7c2);
+  border-radius: 50% 50% 35% 35%;
+  box-shadow: 0 0 18px #f4b942;
+  animation: theme-flicker 1.2s infinite alternate ease-in-out;
+}
+.theme-loader-title {
+  margin: 0 0 4px;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--color-navy);
+}
+.theme-loader-sub {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+.theme-loader-bar {
+  width: 140px;
+  height: 4px;
+  background: #f1e4d8;
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 12px;
+}
+.theme-loader-bar-fill {
+  position: absolute;
+  top: 0;
+  left: -50%;
+  height: 100%;
+  width: 50%;
+  background: linear-gradient(90deg, #f4b942, #f25c05);
+  border-radius: 99px;
+  animation: theme-shimmer 1.4s infinite ease-in-out;
+}
+.server-warmup-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  background: #fff3e6;
+  border: 1px solid #fbd9b8;
+  color: #b04900;
+  font-size: 12px;
+  font-weight: 500;
+  animation: sheet-up 0.3s ease;
+}
+
+@keyframes theme-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes theme-pulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+@keyframes theme-flicker {
+  0% { transform: scaleY(0.88) rotate(-4deg); }
+  50% { transform: scaleY(1.12) rotate(4deg); }
+  100% { transform: scaleY(0.96) rotate(-2deg); }
+}
+@keyframes theme-shimmer {
+  0% { left: -50%; }
+  100% { left: 100%; }
+}
+
+

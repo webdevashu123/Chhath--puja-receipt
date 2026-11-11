@@ -5,9 +5,127 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <title>Chhath Puja Samiti - Yogidih, Dudhari (2026)</title>
+    <style>
+      /* Initial Instant Festive Loader */
+      body {
+        margin: 0;
+        padding: 0;
+        background: #fff8f1;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      .pre-loader-shell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background: radial-gradient(circle at 50% 30%, #fffbf5 0%, #faede1 70%);
+        color: #132c42;
+        text-align: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      .pre-diya-wrap {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+      }
+      .pre-halo {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(244, 185, 66, 0.4) 0%, rgba(242, 92, 5, 0.1) 60%, transparent 80%);
+        animation: pre-pulse 2s infinite ease-in-out;
+      }
+      .pre-brand-mark {
+        position: relative;
+        width: 60px;
+        height: 60px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #f25c05 0%, #e04f00 100%);
+        box-shadow: 0 10px 25px rgba(242, 92, 5, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 24px;
+      }
+      .pre-flame {
+        position: absolute;
+        top: -6px;
+        width: 14px;
+        height: 18px;
+        background: linear-gradient(to top, #f4b942, #ffeb99);
+        border-radius: 50% 50% 35% 35%;
+        box-shadow: 0 0 16px #f4b942;
+        animation: pre-flicker 1.4s infinite alternate ease-in-out;
+      }
+      .pre-loader-shell h1 {
+        margin: 0 0 6px;
+        font-size: 20px;
+        font-weight: 700;
+        color: #0d3b66;
+        letter-spacing: -0.3px;
+      }
+      .pre-loader-shell p {
+        margin: 0 0 24px;
+        font-size: 13px;
+        color: #6c7b88;
+      }
+      .pre-bar {
+        width: 140px;
+        height: 4px;
+        background: #f1e4d8;
+        border-radius: 99px;
+        overflow: hidden;
+        position: relative;
+      }
+      .pre-bar-fill {
+        position: absolute;
+        top: 0;
+        left: -50%;
+        height: 100%;
+        width: 50%;
+        background: linear-gradient(90deg, #f4b942, #f25c05);
+        border-radius: 99px;
+        animation: pre-shimmer 1.5s infinite ease-in-out;
+      }
+      @keyframes pre-pulse {
+        0%, 100% { transform: scale(0.95); opacity: 0.6; }
+        50% { transform: scale(1.15); opacity: 1; }
+      }
+      @keyframes pre-flicker {
+        0% { transform: scaleY(0.9) rotate(-3deg); }
+        50% { transform: scaleY(1.1) rotate(3deg); }
+        100% { transform: scaleY(1) rotate(-1deg); }
+      }
+      @keyframes pre-shimmer {
+        0% { left: -50%; }
+        100% { left: 100%; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="pre-loader-shell">
+        <div class="pre-diya-wrap">
+          <div class="pre-halo"></div>
+          <div class="pre-brand-mark">
+            <span class="pre-flame"></span>
+            ✦
+          </div>
+        </div>
+        <h1>Chhath Puja Samiti</h1>
+        <p>Yogidih, Dudhari · 2026</p>
+        <div class="pre-bar">
+          <div class="pre-bar-fill"></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

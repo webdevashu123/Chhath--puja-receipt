@@ -726,6 +726,49 @@ function Receipt({
   );
 }
 
+function ThemeLoader({
+  title = "Chhath Puja Samiti",
+  subtitle = "Connecting to secure portal…",
+  full = false,
+}: {
+  title?: string;
+  subtitle?: string;
+  full?: boolean;
+}) {
+  const [warmupNotice, setWarmupNotice] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setWarmupNotice(true);
+    }, 2200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className={full ? "theme-loader-full" : "theme-loader-shell"}>
+      <div className="theme-diya-box">
+        <div className="theme-sun-ring" />
+        <div className="theme-sun-aura" />
+        <div className="theme-sun-icon">
+          <span className="theme-flame-flicker" />
+          ✦
+        </div>
+      </div>
+      <h2 className="theme-loader-title">{title}</h2>
+      <p className="theme-loader-sub">{subtitle}</p>
+      <div className="theme-loader-bar">
+        <div className="theme-loader-bar-fill" />
+      </div>
+      {warmupNotice && (
+        <div className="server-warmup-badge">
+          <span className="diya-flame" style={{ position: "static", width: "10px", height: "6px", display: "inline-block" }} />
+          Waking up server from standby, please wait a moment…
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PinGate({
   unlock,
   cancel,
@@ -766,6 +809,14 @@ function PinGate({
       }
     }
   };
+
+  if (verifying) {
+    return (
+      <main className="pin-screen" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <ThemeLoader title="Verifying Passcode" subtitle="Authenticating with secure server…" />
+      </main>
+    );
+  }
 
   return (
     <main className="pin-screen">
@@ -1362,8 +1413,9 @@ export default function App() {
   const [recordsUnlocked, setRecordsUnlocked] = useState(false);
   const [pinGate, setPinGate] = useState(false);
   const [latestDonation, setLatestDonation] = useState<Donation | null>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [recentDonations, setRecentDonations] = useState<Donation[]>([]);
+  const [stats, setStats] = useState<Stats | null>(() => api.getCachedStats());
+  const [recentDonations, setRecentDonations] = useState<Donation[]>(() => api.getCachedDonations() || []);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
   const [toast, setToast] = useState("");
 
   const showToast = (text: string) => {
@@ -1384,11 +1436,14 @@ export default function App() {
       }
     } catch (err) {
       console.error("Dashboard refresh error:", err);
+    } finally {
+      setDashboardLoading(false);
     }
   };
 
   useEffect(() => {
     if (authenticated) {
+      if (!stats) setDashboardLoading(true);
       refreshDashboard();
     }
   }, [authenticated]);
@@ -1450,14 +1505,20 @@ export default function App() {
     <div className="app-frame">
       <div className={appClass}>
         {screen === "home" && (
-          <Home
-            stats={stats}
-            recentDonations={recentDonations}
-            onRefresh={refreshDashboard}
-            goDonate={() => navigate("donate")}
-            goRecords={() => navigate("records")}
-            onSelectDonation={handleSelectDonation}
-          />
+          dashboardLoading && !stats ? (
+            <div style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ThemeLoader title="Chhath Puja Samiti" subtitle="Loading latest records…" />
+            </div>
+          ) : (
+            <Home
+              stats={stats}
+              recentDonations={recentDonations}
+              onRefresh={refreshDashboard}
+              goDonate={() => navigate("donate")}
+              goRecords={() => navigate("records")}
+              onSelectDonation={handleSelectDonation}
+            />
+          )
         )}
         {screen === "donate" && (
           <Donate
