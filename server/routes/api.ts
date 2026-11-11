@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import db, { getNextBillNo, findOrCreateDonor, normalizeName } from '../db/database.ts';
+import { getCollection, nextSequence, normalizeName, type DonationDocument, type DonorDocument } from '../db/database.ts';
 import { saveReceiptPDF, getReceiptPath, isValidReceiptPDF, renderPrintableReceiptHTML } from '../services/pdfService.ts';
 import { requireAdminAuth, generateAdminToken, loginRateLimiter } from '../middleware/auth.ts';
 import { sendWhatsAppReceiptCloud } from '../services/whatsappService.ts';
@@ -44,6 +44,9 @@ const adminLoginSchema = z.object({
 function getPublicBaseUrl(req: Request): string {
   return process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
 }
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const activeDonations = { deleted_at: null };
 
 // ==========================================
 // 1. ADMIN AUTHENTICATION
@@ -126,13 +129,12 @@ router.post('/donations', async (req: Request, res: Response) => {
     const { donorName, phone, amount, paymentMode, note, clientId } = parseResult.data;
     const publicBaseUrl = getPublicBaseUrl(req);
 
+    const donations = getCollection<DonationDocument>('donations');
+    const donors = getCollection<DonorDocument>('donors');
+
     // Idempotency check: if clientId already exists, return previous record immediately
     if (clientId) {
-      const existing = db.prepare(`
-        SELECT id, bill_no, share_token, pdf_path
-        FROM donations
-        WHERE client_id = ?
-      `).get(clientId) as { id: number; bill_no: string; share_token: string; pdf_path: string } | undefined;
+      const existing = await donations.findOne({ client_id: clientId });
 
       if (existing) {
         res.json({
@@ -145,40 +147,76 @@ router.post('/donations', async (req: Request, res: Response) => {
       }
     }
 
-    // Generate unique unguessable share token
-    const shareToken = crypto.randomBytes(16).toString('hex');
+    const { titleCase, lowercase } = normalizeName(donorName);
+    const now = new Date();
 
-    // Run DB transaction: atomic sequential bill_no, find/create donor, insert donation
-    const insertResult = db.transaction(() => {
-      const billNoNumber = getNextBillNo();
-      const billNo = String(billNoNumber);
-
-      const donor = findOrCreateDonor(phone, donorName);
-
-      const info = db.prepare(`
-        INSERT INTO donations (
-          donor_id, name_on_receipt, bill_no, amount, payment_mode, note, share_token, client_id, pdf_path
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        donor.id,
-        donor.nameOnReceipt,
-        billNo,
-        amount,
-        paymentMode,
-        note || '',
-        shareToken,
-        clientId || null,
-        getReceiptPath(billNo)
-      );
-
-      return {
-        id: Number(info.lastInsertRowid),
-        billNo,
-        donor,
+    // Donors and donations are stored as native MongoDB documents.
+    let donor = await donors.findOne({ phone });
+    if (!donor) {
+      const donorId = await nextSequence('donor_id');
+      const candidate: DonorDocument = {
+        id: donorId,
+        name: titleCase,
+        name_normalized: lowercase,
+        phone,
+        address: '',
+        total_donated: 0,
+        donation_count: 0,
+        created_at: now,
+        updated_at: now,
       };
-    })();
+      try {
+        await donors.updateOne({ phone }, { $setOnInsert: candidate }, { upsert: true });
+      } catch (error: any) {
+        if (error?.code !== 11000) throw error;
+      }
+      donor = await donors.findOne({ phone });
+    }
+    if (!donor) throw new Error('Could not find or create donor record.');
+    if (!donor.name?.trim()) {
+      await donors.updateOne({ id: donor.id }, { $set: { name: titleCase, name_normalized: lowercase } });
+      donor.name = titleCase;
+    }
 
-    const { id, billNo, donor } = insertResult;
+    // Generate unique unguessable share token and allocate atomic bill/document IDs.
+    const shareToken = crypto.randomBytes(16).toString('hex');
+    const billNo = String(await nextSequence('bill_no'));
+    const id = await nextSequence('donation_id');
+    const donation: DonationDocument = {
+      id,
+      donor_id: donor.id,
+      name_on_receipt: titleCase,
+      bill_no: billNo,
+      amount,
+      payment_mode: paymentMode,
+      note: note || '',
+      created_at: now,
+      deleted_at: null,
+      pdf_path: getReceiptPath(billNo),
+      share_token: shareToken,
+      client_id: clientId || null,
+      phone,
+    };
+
+    try {
+      await donations.insertOne(donation);
+    } catch (error: any) {
+      if (error?.code === 11000 && clientId) {
+        const existing = await donations.findOne({ client_id: clientId });
+        if (existing) {
+          res.json({
+            id: existing.id,
+            billNo: existing.bill_no,
+            pdfUrl: `/api/donations/${existing.id}/receipt.pdf`,
+            shareUrl: `${publicBaseUrl}/r/${existing.share_token}`,
+          });
+          return;
+        }
+      }
+      throw error;
+    }
+    await donors.updateOne({ id: donor.id }, { $inc: { total_donated: amount, donation_count: 1 }, $set: { updated_at: now } });
+
     const shareUrl = `${publicBaseUrl}/r/${shareToken}`;
 
     // Generate and persist receipt PDF safely
@@ -186,7 +224,7 @@ router.post('/donations', async (req: Request, res: Response) => {
     try {
       pdfPath = await saveReceiptPDF({
         billNo,
-        donorName: donor.nameOnReceipt,
+        donorName: titleCase,
         phone: donor.phone,
         amount,
         paymentMode,
@@ -195,14 +233,14 @@ router.post('/donations', async (req: Request, res: Response) => {
       });
     } catch (pdfErr) {
       console.warn(`[Donation Create] Pre-render PDF notice for bill #${billNo}:`, pdfErr);
-      // The donation is safely saved in SQLite. PDF will be generated on demand.
+      // The donation is safely saved in MongoDB. PDF will be generated on demand.
     }
 
     // Optional WhatsApp Cloud API message send
     if (pdfPath) {
       sendWhatsAppReceiptCloud({
         phone: donor.phone,
-        name: donor.nameOnReceipt,
+        name: titleCase,
         amount,
         billNo,
         shareUrl,
@@ -226,7 +264,7 @@ router.post('/donations', async (req: Request, res: Response) => {
 // 3. ADMIN DONATION LIST & FILTERS
 // ==========================================
 
-router.get('/donations', requireAdminAuth, (req: Request, res: Response) => {
+router.get('/donations', requireAdminAuth, async (req: Request, res: Response) => {
   try {
     const { search, mode, from, to, page = '1', limit = '20' } = req.query;
 
@@ -234,79 +272,59 @@ router.get('/donations', requireAdminAuth, (req: Request, res: Response) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 20));
     const offset = (pageNum - 1) * limitNum;
 
-    const conditions: string[] = ['donations.deleted_at IS NULL'];
-    const params: any[] = [];
+    const filter: Record<string, any> = { ...activeDonations };
+    const donorFilter: Record<string, any> = {};
 
     if (search && String(search).trim()) {
       const q = String(search).trim();
-      const qLower = `%${q.toLowerCase()}%`;
-      const qPhone = `%${q}%`;
-      conditions.push('(donors.phone LIKE ? OR donors.name_normalized LIKE ? OR donations.name_on_receipt LIKE ? OR donations.bill_no LIKE ?)');
-      params.push(qPhone, qLower, qLower, qPhone);
+      const pattern = new RegExp(escapeRegex(q), 'i');
+      Object.assign(donorFilter, { $or: [{ phone: pattern }, { name_normalized: pattern }] });
+      filter.$or = [{ name_on_receipt: pattern }, { bill_no: pattern }];
     }
 
     if (mode && String(mode).trim() && String(mode) !== 'All') {
-      conditions.push('donations.payment_mode = ?');
-      params.push(String(mode).trim());
+      filter.payment_mode = String(mode).trim();
     }
 
     if (from && String(from).trim()) {
-      conditions.push('donations.created_at >= ?');
-      params.push(`${String(from).trim()} 00:00:00`);
+      filter.created_at = { ...filter.created_at, $gte: new Date(`${String(from).trim()}T00:00:00+05:30`) };
     }
 
     if (to && String(to).trim()) {
-      conditions.push('donations.created_at <= ?');
-      params.push(`${String(to).trim()} 23:59:59`);
+      filter.created_at = { ...filter.created_at, $lte: new Date(`${String(to).trim()}T23:59:59.999+05:30`) };
     }
 
-    const whereClause = conditions.join(' AND ');
-
-    // Aggregate totals
-    const totalsQuery = `
-      SELECT COUNT(*) as totalCount, COALESCE(SUM(donations.amount), 0) as totalAmount
-      FROM donations
-      JOIN donors ON donations.donor_id = donors.id
-      WHERE ${whereClause}
-    `;
-    const totals = db.prepare(totalsQuery).get(...params) as { totalCount: number; totalAmount: number };
-
-    // Paginated list
-    const listQuery = `
-      SELECT 
-        donations.id,
-        donations.bill_no as billNo,
-        donations.name_on_receipt as donorName,
-        donations.amount,
-        donations.payment_mode as paymentMode,
-        donations.note,
-        donations.created_at as createdAt,
-        donations.share_token as shareToken,
-        donors.id as donorId,
-        donors.phone
-      FROM donations
-      JOIN donors ON donations.donor_id = donors.id
-      WHERE ${whereClause}
-      ORDER BY donations.id DESC
-      LIMIT ? OFFSET ?
-    `;
-
-    const donations = db.prepare(listQuery).all(...params, limitNum, offset) as any[];
+    const donationCollection = getCollection<DonationDocument>('donations');
+    if (Object.keys(donorFilter).length) {
+      const matchingDonors = await getCollection<DonorDocument>('donors').find(donorFilter, { projection: { id: 1 } }).toArray();
+      const donorIds = matchingDonors.map((donor) => donor.id);
+      filter.$or.push({ donor_id: { $in: donorIds } });
+    }
+    const [totalCount, totals, pageDonations] = await Promise.all([
+      donationCollection.countDocuments(filter),
+      donationCollection.aggregate([{ $match: filter }, { $group: { _id: null, totalAmount: { $sum: '$amount' } } }]).next(),
+      donationCollection.find(filter).sort({ id: -1 }).skip(offset).limit(limitNum).toArray(),
+    ]);
+    const donorIds = [...new Set(pageDonations.map((d) => d.donor_id))];
+    const donors = await getCollection<DonorDocument>('donors').find({ id: { $in: donorIds } }).toArray();
+    const phoneByDonor = new Map(donors.map((donor) => [donor.id, donor.phone]));
     const publicBaseUrl = getPublicBaseUrl(req);
 
-    const formattedDonations = donations.map((d) => ({
-      ...d,
+    const formattedDonations = pageDonations.map((d) => ({
+      id: d.id, billNo: d.bill_no, donorName: d.name_on_receipt, amount: d.amount,
+      paymentMode: d.payment_mode, note: d.note, createdAt: d.created_at,
+      shareToken: d.share_token, donorId: d.donor_id, phone: d.phone || phoneByDonor.get(d.donor_id),
       pdfUrl: `/api/donations/${d.id}/receipt.pdf`,
-      shareUrl: `${publicBaseUrl}/r/${d.shareToken}`,
+      shareUrl: `${publicBaseUrl}/r/${d.share_token}`,
     }));
 
     res.json({
       donations: formattedDonations,
-      totalAmount: totals.totalAmount,
-      totalCount: totals.totalCount,
+      totalAmount: totals?.totalAmount || 0,
+      totalCount,
       page: pageNum,
       limit: limitNum,
-      totalPages: Math.ceil(totals.totalCount / limitNum) || 1,
+      totalPages: Math.ceil(totalCount / limitNum) || 1,
     });
   } catch (error) {
     console.error('[Donations List Error]:', error);
@@ -327,45 +345,32 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
       return;
     }
 
-    const donation = db.prepare(`
-      SELECT 
-        donations.id,
-        donations.bill_no as billNo,
-        donations.name_on_receipt as donorName,
-        donations.amount,
-        donations.payment_mode as paymentMode,
-        donations.note,
-        donations.created_at as createdAt,
-        donations.deleted_at as deletedAt,
-        donors.phone
-      FROM donations
-      JOIN donors ON donations.donor_id = donors.id
-      WHERE donations.id = ?
-    `).get(donationId) as any;
+    const donation = await getCollection<DonationDocument>('donations').findOne({ id: donationId });
+    const donor = donation ? await getCollection<DonorDocument>('donors').findOne({ id: donation.donor_id }) : null;
 
-    if (!donation || donation.deletedAt) {
+    if (!donation || donation.deleted_at || !donor) {
       res.status(404).json({ error: 'Receipt not found' });
       return;
     }
 
-    const targetPdfPath = getReceiptPath(donation.billNo, language);
+    const targetPdfPath = getReceiptPath(donation.bill_no, language);
 
     // If file missing on disk, regenerate on-the-fly
     if (!isValidReceiptPDF(targetPdfPath)) {
       fs.rmSync(targetPdfPath, { force: true });
       try {
-        console.log(`[Receipt] PDF missing on disk for bill #${donation.billNo}. Regenerating...`);
+        console.log(`[Receipt] PDF missing on disk for bill #${donation.bill_no}. Regenerating...`);
         await saveReceiptPDF({
-          billNo: donation.billNo,
-          donorName: donation.donorName,
-          phone: donation.phone,
+          billNo: donation.bill_no,
+          donorName: donation.name_on_receipt,
+          phone: donor.phone,
           amount: donation.amount,
-          paymentMode: donation.paymentMode,
+          paymentMode: donation.payment_mode,
           note: donation.note,
-          date: donation.createdAt,
+          date: donation.created_at,
         }, language);
       } catch (genErr) {
-        console.error(`[Receipt] PDF generation failed for bill #${donation.billNo}:`, genErr);
+        console.error(`[Receipt] PDF generation failed for bill #${donation.bill_no}:`, genErr);
         res.status(503).json({ error: 'PDF generation failed. Please try again shortly.' });
         return;
       }
@@ -374,7 +379,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
     if (isValidReceiptPDF(targetPdfPath)) {
       res.setHeader('Content-Type', 'application/pdf');
       const disposition = req.query.download === '1' ? 'attachment' : 'inline';
-      res.setHeader('Content-Disposition', `${disposition}; filename="receipt_${donation.billNo}_${language}.pdf"`);
+      res.setHeader('Content-Disposition', `${disposition}; filename="receipt_${donation.bill_no}_${language}.pdf"`);
       fs.createReadStream(targetPdfPath).pipe(res);
       return;
     }
@@ -386,7 +391,7 @@ router.get('/donations/:id/receipt.pdf', async (req: Request, res: Response) => 
   }
 });
 
-router.get('/donations/:id/receipt.html', (req: Request, res: Response) => {
+router.get('/donations/:id/receipt.html', async (req: Request, res: Response) => {
   try {
     const donationId = parseInt(String(req.params.id), 10);
     if (!donationId) {
@@ -394,35 +399,22 @@ router.get('/donations/:id/receipt.html', (req: Request, res: Response) => {
       return;
     }
 
-    const donation = db.prepare(`
-      SELECT 
-        donations.id,
-        donations.bill_no as billNo,
-        donations.name_on_receipt as donorName,
-        donations.amount,
-        donations.payment_mode as paymentMode,
-        donations.note,
-        donations.created_at as createdAt,
-        donations.deleted_at as deletedAt,
-        donors.phone
-      FROM donations
-      JOIN donors ON donations.donor_id = donors.id
-      WHERE donations.id = ?
-    `).get(donationId) as any;
+    const donation = await getCollection<DonationDocument>('donations').findOne({ id: donationId });
+    const donor = donation ? await getCollection<DonorDocument>('donors').findOne({ id: donation.donor_id }) : null;
 
-    if (!donation || donation.deletedAt) {
+    if (!donation || donation.deleted_at || !donor) {
       res.status(404).send('Receipt not found');
       return;
     }
 
     const html = renderPrintableReceiptHTML({
-      billNo: donation.billNo,
-      donorName: donation.donorName,
-      phone: donation.phone,
+      billNo: donation.bill_no,
+      donorName: donation.name_on_receipt,
+      phone: donor.phone,
       amount: donation.amount,
-      paymentMode: donation.paymentMode,
+      paymentMode: donation.payment_mode,
       note: donation.note,
-      date: donation.createdAt,
+      date: donation.created_at,
     });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
@@ -436,7 +428,7 @@ router.get('/donations/:id/receipt.html', (req: Request, res: Response) => {
 // 5. SOFT DELETE DONATION (Admin)
 // ==========================================
 
-router.delete('/donations/:id', requireAdminAuth, (req: Request, res: Response) => {
+router.delete('/donations/:id', requireAdminAuth, async (req: Request, res: Response) => {
   try {
     const donationId = parseInt(String(req.params.id), 10);
     if (!donationId) {
@@ -444,11 +436,10 @@ router.delete('/donations/:id', requireAdminAuth, (req: Request, res: Response) 
       return;
     }
 
-    const result = db.prepare(`
-      UPDATE donations
-      SET deleted_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND deleted_at IS NULL
-    `).run(donationId);
+    const donation = await getCollection<DonationDocument>('donations').findOneAndUpdate(
+      { id: donationId, ...activeDonations }, { $set: { deleted_at: new Date() } }, { returnDocument: 'before' },
+    );
+    const result = donation ? { changes: 1 } : { changes: 0 };
 
     if (result.changes === 0) {
       res.status(404).json({ error: 'Donation not found or already deleted' });
@@ -466,7 +457,7 @@ router.delete('/donations/:id', requireAdminAuth, (req: Request, res: Response) 
 // 6. DONORS SEARCH & PROFILE (Reach Portal)
 // ==========================================
 
-router.get('/donors/search', (req: Request, res: Response) => {
+router.get('/donors/search', async (req: Request, res: Response) => {
   try {
     const q = String(req.query.q || '').trim();
     if (!q) {
@@ -474,58 +465,33 @@ router.get('/donors/search', (req: Request, res: Response) => {
       return;
     }
 
-    const qLower = `%${q.toLowerCase()}%`;
-    const qPhone = `%${q}%`;
-
-    // Case-insensitive search on normalized name or phone match
-    const donors = db.prepare(`
-      SELECT id, name, phone, created_at as createdAt
-      FROM donors
-      WHERE phone LIKE ? OR name_normalized LIKE ?
-      ORDER BY id DESC
-      LIMIT 20
-    `).all(qPhone, qLower) as any[];
+    const pattern = new RegExp(escapeRegex(q), 'i');
+    const donors = await getCollection<DonorDocument>('donors').find({ $or: [{ phone: pattern }, { name_normalized: pattern }] })
+      .sort({ id: -1 }).limit(20).toArray();
 
     const publicBaseUrl = getPublicBaseUrl(req);
 
-    const results = donors.map((donor) => {
-      const stats = db.prepare(`
-        SELECT COALESCE(SUM(amount), 0) as totalDonated, COUNT(*) as donationCount
-        FROM donations
-        WHERE donor_id = ? AND deleted_at IS NULL
-      `).get(donor.id) as { totalDonated: number; donationCount: number };
-
-      const history = db.prepare(`
-        SELECT 
-          id,
-          bill_no as billNo,
-          name_on_receipt as donorName,
-          amount,
-          payment_mode as paymentMode,
-          note,
-          created_at as createdAt,
-          share_token as shareToken
-        FROM donations
-        WHERE donor_id = ? AND deleted_at IS NULL
-        ORDER BY id DESC
-      `).all(donor.id) as any[];
+    const results = await Promise.all(donors.map(async (donor) => {
+      const history = await getCollection<DonationDocument>('donations').find({ donor_id: donor.id, ...activeDonations }).sort({ id: -1 }).toArray();
+      const stats = history.reduce((totals, item) => ({ totalDonated: totals.totalDonated + item.amount, donationCount: totals.donationCount + 1 }), { totalDonated: 0, donationCount: 0 });
 
       const formattedHistory = history.map((item) => ({
-        ...item,
+        id: item.id, billNo: item.bill_no, donorName: item.name_on_receipt, amount: item.amount,
+        paymentMode: item.payment_mode, note: item.note, createdAt: item.created_at, shareToken: item.share_token,
         pdfUrl: `/api/donations/${item.id}/receipt.pdf`,
-        shareUrl: `${publicBaseUrl}/r/${item.shareToken}`,
+        shareUrl: `${publicBaseUrl}/r/${item.share_token}`,
       }));
 
       return {
         id: donor.id,
         name: donor.name,
         phone: donor.phone, // Always show phone with donor
-        createdAt: donor.createdAt,
+        createdAt: donor.created_at,
         totalDonated: stats.totalDonated,
         donationCount: stats.donationCount,
         history: formattedHistory,
       };
-    });
+    }));
 
     res.json({ donors: results });
   } catch (error) {
@@ -538,36 +504,21 @@ router.get('/donors/search', (req: Request, res: Response) => {
 // 7. STATS (Home / Dashboard / Admin)
 // ==========================================
 
-router.get('/stats', (req: Request, res: Response) => {
+router.get('/stats', async (req: Request, res: Response) => {
   try {
-    // Total collected and donation count
-    const overall = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as totalCollected, COUNT(*) as totalDonations
-      FROM donations
-      WHERE deleted_at IS NULL
-    `).get() as { totalCollected: number; totalDonations: number };
-
-    // Today's total (using local time)
-    const today = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as todayTotal
-      FROM donations
-      WHERE deleted_at IS NULL AND date(created_at, 'localtime') = date('now', 'localtime')
-    `).get() as { todayTotal: number };
-
-    // Unique active donors count
-    const uniqueDonors = db.prepare(`
-      SELECT COUNT(DISTINCT donor_id) as donorCount
-      FROM donations
-      WHERE deleted_at IS NULL
-    `).get() as { donorCount: number };
-
-    // Split by payment mode
-    const modes = db.prepare(`
-      SELECT payment_mode as mode, COALESCE(SUM(amount), 0) as total, COUNT(*) as count
-      FROM donations
-      WHERE deleted_at IS NULL
-      GROUP BY payment_mode
-    `).all() as { mode: string; total: number; count: number }[];
+    const donations = getCollection<DonationDocument>('donations');
+    const todayInIndia = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const [year, month, day] = todayInIndia.split('-').map(Number);
+    const startOfToday = new Date(`${todayInIndia}T00:00:00+05:30`);
+    const tomorrowUTC = new Date(Date.UTC(year, month - 1, day + 1));
+    const tomorrowInIndia = `${tomorrowUTC.getUTCFullYear()}-${String(tomorrowUTC.getUTCMonth() + 1).padStart(2, '0')}-${String(tomorrowUTC.getUTCDate()).padStart(2, '0')}`;
+    const startOfTomorrow = new Date(`${tomorrowInIndia}T00:00:00+05:30`);
+    const [overall, today, donorRows, modeRows] = await Promise.all([
+      donations.aggregate([{ $match: activeDonations }, { $group: { _id: null, totalCollected: { $sum: '$amount' }, totalDonations: { $sum: 1 } } }]).next(),
+      donations.aggregate([{ $match: { ...activeDonations, created_at: { $gte: startOfToday, $lt: startOfTomorrow } } }, { $group: { _id: null, todayTotal: { $sum: '$amount' } } }]).next(),
+      donations.distinct('donor_id', activeDonations),
+      donations.aggregate([{ $match: activeDonations }, { $group: { _id: '$payment_mode', total: { $sum: '$amount' }, count: { $sum: 1 } } }]).toArray(),
+    ]);
 
     const splitByMode: Record<string, { total: number; count: number }> = {
       Cash: { total: 0, count: 0 },
@@ -577,19 +528,15 @@ router.get('/stats', (req: Request, res: Response) => {
       Cheque: { total: 0, count: 0 },
     };
 
-    for (const m of modes) {
-      if (splitByMode[m.mode]) {
-        splitByMode[m.mode] = { total: m.total, count: m.count };
-      } else {
-        splitByMode[m.mode] = { total: m.total, count: m.count };
-      }
+    for (const m of modeRows) {
+      if (m._id) splitByMode[m._id] = { total: m.total, count: m.count };
     }
 
     res.json({
-      totalCollected: overall.totalCollected,
-      todayTotal: today.todayTotal,
-      donorCount: uniqueDonors.donorCount,
-      totalDonations: overall.totalDonations,
+      totalCollected: overall?.totalCollected || 0,
+      todayTotal: today?.todayTotal || 0,
+      donorCount: donorRows.length,
+      totalDonations: overall?.totalDonations || 0,
       splitByMode,
     });
   } catch (error) {
@@ -602,22 +549,17 @@ router.get('/stats', (req: Request, res: Response) => {
 // 8. CSV EXPORT (Admin, English only)
 // ==========================================
 
-router.get('/export.csv', requireAdminAuth, (req: Request, res: Response) => {
+router.get('/export.csv', requireAdminAuth, async (req: Request, res: Response) => {
   try {
-    const rows = db.prepare(`
-      SELECT 
-        donations.bill_no as billNo,
-        donations.created_at as createdAt,
-        donations.name_on_receipt as donorName,
-        donors.phone,
-        donations.amount,
-        donations.payment_mode as paymentMode,
-        donations.note
-      FROM donations
-      JOIN donors ON donations.donor_id = donors.id
-      WHERE donations.deleted_at IS NULL
-      ORDER BY donations.id DESC
-    `).all() as any[];
+    const donations = await getCollection<DonationDocument>('donations').find(activeDonations).sort({ id: -1 }).toArray();
+    const donorIds = [...new Set(donations.map((item) => item.donor_id))];
+    const donors = await getCollection<DonorDocument>('donors').find({ id: { $in: donorIds } }).toArray();
+    const phoneByDonor = new Map(donors.map((donor) => [donor.id, donor.phone]));
+    const rows = donations.map((item) => ({
+      billNo: item.bill_no, createdAt: item.created_at, donorName: item.name_on_receipt,
+      phone: item.phone || phoneByDonor.get(item.donor_id), amount: item.amount,
+      paymentMode: item.payment_mode, note: item.note,
+    }));
 
     // CSV Escape helper
     const escapeCsv = (val: unknown) => {

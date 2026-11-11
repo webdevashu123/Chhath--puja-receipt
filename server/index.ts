@@ -9,23 +9,17 @@ import dotenv from 'dotenv';
 
 dotenv.config({ path: path.resolve(import.meta.dirname, '../.env') });
 
-import db, { dbPath, initDatabase, restoredFromAtlas } from './db/database.ts';
-import { persistSnapshot } from './db/mongoSnapshot.ts';
+import { closeDatabase, connectDatabase, getCollection, type DonationDocument } from './db/database.ts';
 import apiRouter from './routes/api.ts';
 import { apiRateLimiter } from './middleware/auth.ts';
-import { initBackupScheduler } from './services/backupService.ts';
 import { getReceiptPath, saveReceiptPDF, isValidReceiptPDF } from './services/pdfService.ts';
 
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 
-// Initialize Database & Background Schedulers
-initDatabase();
-if (!restoredFromAtlas) {
-  await persistSnapshot(async (targetPath) => { await db.backup(targetPath); });
-}
-initBackupScheduler();
+// Do not accept traffic until Atlas connects, indexes are ready, and legacy data is migrated.
+await connectDatabase();
 
 // Security & Production Middleware
 app.use(helmet({
@@ -52,39 +46,6 @@ app.get('/healthz', (_req: Request, res: Response) => {
 // Apply rate limiter to /api
 app.use('/api', apiRateLimiter);
 
-// Persist every API write to Atlas before returning success to the client.
-// This keeps the existing synchronous SQLite query layer intact while making
-// the durable copy live outside Render's ephemeral filesystem.
-app.use('/api', (req: Request, res: Response, next: NextFunction) => {
-  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    next();
-    return;
-  }
-
-  const send = res.send.bind(res);
-  let responseHandled = false;
-  res.send = ((body?: any) => {
-    if (responseHandled) return res;
-    responseHandled = true;
-    persistSnapshot(async (targetPath) => { await db.backup(targetPath); })
-      .then(() => send(body))
-      .catch((error) => {
-        console.error('[Database] Atlas snapshot failed; write response withheld:', error);
-        if (!res.headersSent) {
-          res.status(503).type('application/json');
-          send(JSON.stringify({
-            error: 'Database backup failed. Please retry; the change was not confirmed as saved.',
-          }));
-        } else {
-          res.end();
-        }
-      });
-    return res;
-  }) as typeof res.send;
-
-  next();
-});
-
 // Mount API routes
 app.use('/api', apiRouter);
 
@@ -97,23 +58,10 @@ app.get('/r/:token', async (req: Request, res: Response) => {
       return;
     }
 
-    const donation = db.prepare(`
-      SELECT 
-        donations.id,
-        donations.bill_no as billNo,
-        donations.amount,
-        donations.payment_mode as paymentMode,
-        donations.note,
-        donations.created_at as createdAt,
-        donations.deleted_at as deletedAt,
-        donors.name as donorName,
-        donors.phone
-      FROM donations
-      JOIN donors ON donations.donor_id = donors.id
-      WHERE donations.share_token = ?
-    `).get(token) as any;
+    const donation = await getCollection<DonationDocument>('donations').findOne({ share_token: token });
+    const donor = donation ? await getCollection('donors').findOne({ id: donation.donor_id }) : null;
 
-    if (!donation || donation.deletedAt) {
+    if (!donation || donation.deleted_at || !donor) {
       res.status(404).send(`
         <!DOCTYPE html>
         <html>
@@ -128,24 +76,24 @@ app.get('/r/:token', async (req: Request, res: Response) => {
     }
 
     const language = 'en';
-    const targetPdfPath = getReceiptPath(donation.billNo, language);
+    const targetPdfPath = getReceiptPath(donation.bill_no, language);
 
     // Regenerate if file missing on disk
     if (!isValidReceiptPDF(targetPdfPath)) {
       fs.rmSync(targetPdfPath, { force: true });
       try {
-        console.log(`[Public Share] PDF missing for bill #${donation.billNo}. Regenerating...`);
+        console.log(`[Public Share] PDF missing for bill #${donation.bill_no}. Regenerating...`);
         await saveReceiptPDF({
-          billNo: donation.billNo,
-          donorName: donation.donorName,
-          phone: donation.phone,
+          billNo: donation.bill_no,
+          donorName: donation.name_on_receipt,
+          phone: donor.phone,
           amount: donation.amount,
-          paymentMode: donation.paymentMode,
+          paymentMode: donation.payment_mode,
           note: donation.note,
-          date: donation.createdAt,
+          date: donation.created_at,
         }, language);
       } catch (genErr) {
-        console.error(`[Public Share] PDF generation failed for bill #${donation.billNo}:`, genErr);
+        console.error(`[Public Share] PDF generation failed for bill #${donation.bill_no}:`, genErr);
         res.status(503).type('text/plain').send('English PDF generation failed. Please try again shortly.');
         return;
       }
@@ -153,7 +101,7 @@ app.get('/r/:token', async (req: Request, res: Response) => {
 
     if (isValidReceiptPDF(targetPdfPath)) {
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.billNo}_${language}.pdf"`);
+      res.setHeader('Content-Disposition', `inline; filename="receipt_${donation.bill_no}_${language}.pdf"`);
       fs.createReadStream(targetPdfPath).pipe(res);
       return;
     }
@@ -192,10 +140,19 @@ const server = app.listen(PORT, () => {
   console.log(`===============================================`);
   console.log(` Chhath Puja Samiti Full-Stack Service Running `);
   console.log(` Port: ${PORT}`);
-  console.log(` Database: ./data/app.db (WAL Mode)`);
+  console.log(` Database: MongoDB Atlas native collections`);
   console.log(` API Endpoint: http://localhost:${PORT}/api`);
   console.log(` Public Receipts: http://localhost:${PORT}/r/:token`);
   console.log(`===============================================`);
 });
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => {
+    server.close(async () => {
+      await closeDatabase();
+      process.exit(0);
+    });
+  });
+}
 
 export default app;

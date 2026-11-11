@@ -2,15 +2,15 @@
 
 A unified, mobile-first full-stack donation management portal and bilingual A4 PDF receipt generator for **Chhath Puja Samiti (Yogidih, Dudhari · 2026)**.
 
-Built with **React 19**, **Tailwind CSS v4**, **Node.js (Express 5)**, **SQLite (better-sqlite3)** in WAL mode, and **Puppeteer** with embedded Indic fonts.
+Built with **React 19**, **Tailwind CSS v4**, **Node.js (Express 5)**, **MongoDB Atlas**, and **Puppeteer** with embedded Indic fonts.
 
 ---
 
 ## 📋 Architecture & Highlights
 
 - **Unified Single-Service App**: Express serves the React frontend (SPA) from `/dist` as static assets and powers all `/api/*` and `/r/:token` public endpoints.
-- **SQLite query engine with MongoDB Atlas persistence**: The current synchronous SQLite query layer remains local for compatibility. A consistent SQLite snapshot is uploaded to Atlas before each write API response, then restored on service startup. This keeps donation, donor, setting, counter, and audit data durable across Render Free restarts.
-- **Strictly Sequential Bill Numbers**: Atomic counter sequence starting at **1001** (`1001`, `1002`, `1003`...) handled inside an SQLite transaction. Guarantees no two simultaneous requests ever get the same bill number.
+- **MongoDB Atlas native persistence**: Donations, donors, and counters are stored as MongoDB documents. A previous SQLite snapshot in Atlas is imported once on startup; all normal application reads and writes use MongoDB.
+- **Sequential Bill Numbers**: Atomic MongoDB counter sequence starting at **1001** (`1001`, `1002`, `1003`...).
 - **Donor Matching**: Donors are identified by their unique 10-digit phone number. Existing donors are reused; names are updated only if previously empty.
 - **Official Bilingual A4 PDF Receipt Generator**:
   - Uses canonical `receipt.html` template with embedded Devanagari and Latin fonts (`Hind`, `Poppins`, `Tiro Devanagari`).
@@ -21,7 +21,6 @@ Built with **React 19**, **Tailwind CSS v4**, **Node.js (Express 5)**, **SQLite 
   - **Primary (Mobile)**: Uses the **Web Share API Level 2** (`navigator.share({ files: [file], ... })`), downloading the generated PDF and attaching the actual document into WhatsApp chat.
   - **Fallback (Desktop / Unsupported Browsers)**: Opens `https://wa.me/91<phone>?text=...` with the prefilled bilingual message and an unguessable public share link (`/r/:token`).
   - **Optional (WhatsApp Cloud API)**: Configurable direct document transmission via Meta Graph API v19.0.
-- **Automated Daily Backups**: Live online snapshot of `app.db` saved daily at midnight into `./data/backups/`, retaining the last 14 backups.
 - **Security & Hardening**:
   - Admin login protected by bcrypt hash and rate-limited to 5 attempts per 10 minutes.
   - HttpOnly 12-hour session cookies (`cps_auth`).
@@ -106,7 +105,7 @@ Open [http://localhost:5000](http://localhost:5000) in your browser.
 
 Create an Atlas database user and allow the Render service to connect in the Atlas Network Access settings. In Render, open **Environment** and set `MONGODB_URI` to the Atlas connection string (URL-encode special characters in the password). `MONGODB_DATABASE` defaults to `chhath_puja`. Production startup intentionally fails when `MONGODB_URI` is missing or Atlas cannot be reached, so the app cannot silently accept writes to Render's temporary disk.
 
-Atlas stores SQLite snapshots in GridFS; the app uploads the current database at startup and after each write, retains the latest snapshot, and restores it before serving requests. Render's already-lost ephemeral data cannot be recovered by this migration.
+If an older SQLite snapshot exists in Atlas `sqliteSnapshots` GridFS, first startup imports it once into native MongoDB collections. The legacy snapshot is retained. Data already lost from an ephemeral disk cannot be recovered.
 
 The repository also includes a GitHub Actions workflow that requests `/healthz` every 10 minutes to reduce Render Free spin-downs. This uses the monthly free instance hours and GitHub scheduled runs; GitHub can delay scheduled jobs, and Render can still restart or suspend Free services, so it cannot guarantee 24/7 uptime. A paid always-on host is the only dependable option for this requirement.
 
@@ -121,7 +120,7 @@ The application includes a production-grade `Dockerfile` based on `node:20-bookw
 # Build and run the container with persistent volume for ./data
 docker compose up -d --build
 ```
-This automatically mounts `./data` on the host to `/app/data` in the container, ensuring the SQLite database (`app.db`), generated receipts (`/data/receipts`), and backups (`/data/backups`) persist across restarts and updates.
+Generated receipts are cached in `/app/data/receipts`; MongoDB Atlas holds persistent donation data.
 
 ### Manual Docker Build & Run
 ```bash
@@ -160,40 +159,13 @@ To automatically push the PDF document from Meta's servers when a donation is su
 
 ---
 
-## 💾 Database Backups & Restore
+## 💾 Database
 
-### Automated Backups
-- The server automatically triggers a backup every midnight (`00:00`) via `node-cron`.
-- Backups use `better-sqlite3`'s live backup API (`db.backup(...)`), which creates a lock-free snapshot even while donations are being submitted.
-- Files are saved as `data/backups/app-YYYY-MM-DD-HHmmss.db`.
-- The system automatically retains the **last 14 backups** and deletes older archives.
-
-### Manual Backup
-To create an immediate backup programmatically:
-```bash
-npx tsx -e "import { performBackup } from './server/services/backupService.ts'; performBackup();"
-```
-
-### Restoring from Backup
-1. Stop the application server:
-   ```bash
-   # If running via systemd or node
-   pkill -f "server/index.ts"
-   # Or with Docker
-   docker compose down
-   ```
-2. Copy the desired backup file over `data/app.db`:
-   ```bash
-   cp data/backups/app-<TIMESTAMP>.db data/app.db
-   ```
-3. Restart the server:
-   ```bash
-   npm start # or docker compose up -d
-   ```
+MongoDB Atlas is the production database. Use Atlas backup and restore features; do not rely on the container filesystem for persistent donation records.
 
 ---
 
-## 🧪 Verification & Test Results
+## Verification & Test Results
 
 Run the full automated end-to-end verification suite:
 ```bash
