@@ -115,7 +115,7 @@ export const api = {
     const data = await res.json();
 
     const totalCollected = Number(data.totalCollected) || 0;
-    const targetGoal = 251000;
+    const targetGoal = 151000;
     const goalPercentage = targetGoal > 0 ? Math.min(100, Math.round((totalCollected / targetGoal) * 100)) : 0;
     const todayCollected = Number(data.todayTotal) || 0;
     const donorCount = Number(data.donorCount) || 0;

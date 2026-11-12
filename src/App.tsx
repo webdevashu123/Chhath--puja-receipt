@@ -267,7 +267,7 @@ function Home({
   onLock?: () => void;
 }) {
   const total = stats?.totalCollected ?? 0;
-  const target = stats?.targetGoal ?? 251000;
+  const target = stats?.targetGoal ?? 151000;
   const percent = stats?.goalPercentage ?? (target > 0 ? Math.round((total / target) * 100) : 0);
   const today = stats?.todayCollected ?? 0;
   const donors = stats?.donorCount ?? 0;

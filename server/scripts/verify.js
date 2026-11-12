@@ -46,7 +46,7 @@ async function runVerification() {
   const statsRes = await fetch(`${BASE_URL}/stats`);
   const stats = await statsRes.json();
   assert(stats.totalCollected > 0, `Total collected calculated via SQL SUM: ₹${stats.totalCollected.toLocaleString('en-IN')}`);
-  assert(stats.targetGoal === 251000, `Target goal is ₹${stats.targetGoal.toLocaleString('en-IN')}`);
+  assert(stats.targetGoal === 151000, `Target goal is ₹${stats.targetGoal.toLocaleString('en-IN')}`);
   assert(stats.goalPercentage > 0, `Goal percentage calculated: ${stats.goalPercentage}%`);
   assert(stats.modeBreakdown && stats.modeBreakdown.length === 5, 'Payment modes breakdown returned 5 modes');
 
