@@ -1544,7 +1544,7 @@ function SearchScreen({
               <div>
                 <p>Donor profile</p>
                 <h2>{donor.name}</h2>
-                <span style={{ fontWeight: "700", color: "var(--color-navy)" }}>📞 +91 {donor.phone}</span>
+                <span style={{ fontWeight: "700", color: "#fff" }}>📞 +91 {donor.phone}</span>
               </div>
             </div>
             <div className="profile-stats">
