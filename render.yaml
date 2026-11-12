@@ -13,6 +13,8 @@ services:
         value: production
       - key: ADMIN_PIN_HASH
         value: $2b$10$tAsGY5oFYr7ehZKA8HTVN.EBBudbBjpH5Aom1eiUzEnyojhO/iWYi
+      - key: EXPENSE_EDIT_PIN_HASH
+        value: '$2b$10$IkdyhLBrUWR3gccW3KFcI.QMTOUAmF7F/u7MgE0XP5JPmu04qpQdK'
       - key: JWT_SECRET
         generateValue: true
       - key: WHATSAPP_CLOUD_ENABLED

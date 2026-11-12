@@ -12,6 +12,7 @@ Built with **React 19**, **Tailwind CSS v4**, **Node.js (Express 5)**, **MongoDB
 - **MongoDB Atlas native persistence**: Donations, donors, and counters are stored as MongoDB documents. A previous SQLite snapshot in Atlas is imported once on startup; all normal application reads and writes use MongoDB.
 - **Sequential Bill Numbers**: Atomic MongoDB counter sequence starting at **1001** (`1001`, `1002`, `1003`...).
 - **Donor Matching**: Donors are identified by their unique 10-digit phone number. Existing donors are reused; names are updated only if previously empty.
+- **Separate Expense Tracker**: Record category, purchase/payment details, amount, date, and notes in MongoDB. Expense edits require the separate edit PIN (`8585`); expenses do not change donation totals.
 - **Official Bilingual A4 PDF Receipt Generator**:
   - Uses canonical `receipt.html` template with embedded Devanagari and Latin fonts (`Hind`, `Poppins`, `Tiro Devanagari`).
   - Rendered via a Puppeteer singleton with an automated concurrency limiter (max 2 concurrent renders).

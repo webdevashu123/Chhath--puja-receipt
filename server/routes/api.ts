@@ -3,8 +3,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { ObjectId } from 'mongodb';
 import { z } from 'zod';
-import { getCollection, nextSequence, normalizeName, type DonationDocument, type DonorDocument } from '../db/database.ts';
+import { getCollection, nextSequence, normalizeName, type DonationDocument, type DonorDocument, type ExpenseDocument } from '../db/database.ts';
 import { saveReceiptPDF, getReceiptPath, isValidReceiptPDF, renderPrintableReceiptHTML } from '../services/pdfService.ts';
 import { requireAdminAuth, generateAdminToken, loginRateLimiter } from '../middleware/auth.ts';
 import { sendWhatsAppReceiptCloud } from '../services/whatsappService.ts';
@@ -39,6 +40,19 @@ const createDonationSchema = z.object({
 
 const adminLoginSchema = z.object({
   pin: z.string().min(1, 'PIN is required'),
+});
+
+const expenseSchema = z.object({
+  category: z.string().trim().min(1, 'Choose or enter an expense category').max(60),
+  description: z.string().trim().min(1, 'Enter what was purchased or paid for').max(160),
+  amount: z.number().int().positive('Amount must be a positive integer'),
+  spentOn: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid expense date')
+    .refine((value) => {
+      const parsed = new Date(`${value}T00:00:00Z`);
+      return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    }, 'Enter a real calendar date'),
+  note: z.string().trim().max(250).optional().default(''),
 });
 
 function getPublicBaseUrl(req: Request): string {
@@ -546,7 +560,105 @@ router.get('/stats', async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// 8. CSV EXPORT (Admin, English only)
+// 8. EXPENSE TRACKER (separate from donations)
+// ==========================================
+
+router.get('/expenses', requireAdminAuth, async (_req: Request, res: Response) => {
+  try {
+    const expenses = await getCollection<ExpenseDocument>('expenses')
+      .find({}).sort({ spent_on: -1, created_at: -1 }).limit(5000).toArray();
+    const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    res.json({
+      expenses: expenses.map((expense) => ({
+        id: String(expense._id),
+        category: expense.category,
+        description: expense.description,
+        amount: expense.amount,
+        spentOn: expense.spent_on,
+        note: expense.note,
+        createdAt: expense.created_at,
+        updatedAt: expense.updated_at,
+      })),
+      totalAmount,
+    });
+  } catch (error) {
+    console.error('[Expense List Error]:', error);
+    res.status(500).json({ error: 'Could not load expense records' });
+  }
+});
+
+router.post('/expenses', requireAdminAuth, async (req: Request, res: Response) => {
+  try {
+    const parsed = expenseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid expense details' });
+      return;
+    }
+    const now = new Date();
+    const { spentOn, ...details } = parsed.data;
+    const expense: ExpenseDocument = {
+      ...details,
+      spent_on: spentOn,
+      created_at: now,
+      updated_at: now,
+    };
+    const result = await getCollection<ExpenseDocument>('expenses').insertOne(expense);
+    res.status(201).json({ id: String(result.insertedId), message: 'Expense saved' });
+  } catch (error) {
+    console.error('[Expense Create Error]:', error);
+    res.status(500).json({ error: 'Could not save expense' });
+  }
+});
+
+router.put('/expenses/:id', requireAdminAuth, async (req: Request, res: Response) => {
+  try {
+    const expenseId = String(req.params.id);
+    const parsed = expenseSchema.extend({ editPin: z.string().min(1, 'Expense edit password is required') }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid expense details' });
+      return;
+    }
+    if (!ObjectId.isValid(expenseId)) {
+      res.status(400).json({ error: 'Invalid expense record' });
+      return;
+    }
+    const editPinHash = process.env.EXPENSE_EDIT_PIN_HASH;
+    if (!editPinHash) {
+      res.status(500).json({ error: 'Expense edit password is not configured on the server' });
+      return;
+    }
+    const { editPin, ...data } = parsed.data;
+    if (!(await bcrypt.compare(editPin, editPinHash))) {
+      res.status(401).json({ error: 'Incorrect expense edit password' });
+      return;
+    }
+    const updated = await getCollection<ExpenseDocument>('expenses').findOneAndUpdate(
+      { _id: new ObjectId(expenseId) },
+      {
+        $set: {
+          category: data.category,
+          description: data.description,
+          amount: data.amount,
+          spent_on: data.spentOn,
+          note: data.note,
+          updated_at: new Date(),
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!updated) {
+      res.status(404).json({ error: 'Expense record not found' });
+      return;
+    }
+    res.json({ message: 'Expense updated' });
+  } catch (error) {
+    console.error('[Expense Update Error]:', error);
+    res.status(500).json({ error: 'Could not update expense' });
+  }
+});
+
+// ==========================================
+// 9. CSV EXPORT (Admin, English only)
 // ==========================================
 
 router.get('/export.csv', requireAdminAuth, async (req: Request, res: Response) => {

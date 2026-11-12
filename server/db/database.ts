@@ -33,6 +33,17 @@ export interface DonationDocument {
   phone?: string;
 }
 
+export interface ExpenseDocument {
+  _id?: import('mongodb').ObjectId;
+  category: string;
+  description: string;
+  amount: number;
+  spent_on: string;
+  note: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
 let client: MongoClient | undefined;
 let database: Db | undefined;
 
@@ -63,6 +74,7 @@ export async function connectDatabase(): Promise<void> {
 
   const donors = getCollection<DonorDocument>('donors');
   const donations = getCollection<DonationDocument>('donations');
+  const expenses = getCollection<ExpenseDocument>('expenses');
   await Promise.all([
     donors.createIndex({ id: 1 }, { unique: true }),
     donors.createIndex({ phone: 1 }, { unique: true }),
@@ -73,6 +85,7 @@ export async function connectDatabase(): Promise<void> {
     donations.createIndex({ client_id: 1 }, { unique: true, partialFilterExpression: { client_id: { $type: 'string' } } }),
     donations.createIndex({ donor_id: 1, id: -1 }),
     donations.createIndex({ deleted_at: 1, created_at: -1 }),
+    expenses.createIndex({ spent_on: -1, created_at: -1 }),
   ]);
 
   await migrateLegacySqliteSnapshot(getDatabase());

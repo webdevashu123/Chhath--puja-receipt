@@ -56,6 +56,17 @@ export interface Stats {
   }[];
 }
 
+export interface ExpenseEntry {
+  id: string;
+  category: string;
+  description: string;
+  amount: number;
+  spentOn: string;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const API_BASE = '/api';
 
 export const api = {
@@ -328,6 +339,38 @@ export const api = {
         history: historyList,
       };
     });
+  },
+
+  async getExpenses(): Promise<{ expenses: ExpenseEntry[]; totalAmount: number }> {
+    const res = await fetch(`${API_BASE}/expenses`, { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not load expenses');
+    return { expenses: data.expenses || [], totalAmount: Number(data.totalAmount) || 0 };
+  },
+
+  async createExpense(expense: Omit<ExpenseEntry, 'id' | 'createdAt' | 'updatedAt'>): Promise<void> {
+    const res = await fetch(`${API_BASE}/expenses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(expense),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not save expense');
+  },
+
+  async updateExpense(
+    id: string,
+    expense: Omit<ExpenseEntry, 'id' | 'createdAt' | 'updatedAt'> & { editPin: string },
+  ): Promise<void> {
+    const res = await fetch(`${API_BASE}/expenses/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(expense),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not update expense');
   },
 
   getCsvExportUrl(): string {

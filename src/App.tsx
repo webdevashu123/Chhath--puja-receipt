@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, type FormEvent, type ReactNode } from "react";
-import { api, type Donation, type PaymentMode, type Stats, type DonorProfile, type ReconciliationRecord } from "./api.ts";
+import { api, type Donation, type PaymentMode, type Stats, type DonorProfile, type ReconciliationRecord, type ExpenseEntry } from "./api.ts";
 
-type Screen = "home" | "donate" | "receipt" | "records" | "search";
+type Screen = "home" | "donate" | "receipt" | "records" | "search" | "expenses";
 
 const formatAmount = (amount: number) => `₹${amount.toLocaleString("en-IN")}`;
 const initials = (name: string) =>
@@ -36,6 +36,12 @@ const iconPaths: Record<string, ReactNode> = {
     <>
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-4-4" />
+    </>
+  ),
+  expenses: (
+    <>
+      <path d="M4 5h16v14H4z" />
+      <path d="M8 9h8M8 13h3m5 2-2-2-2 2" />
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
@@ -208,6 +214,7 @@ function BottomNav({ screen, navigate }: { screen: Screen; navigate: (screen: Sc
     { id: "donate", label: "Donate", icon: "donate" },
     { id: "records", label: "Records", icon: "records" },
     { id: "search", label: "Search", icon: "search" },
+    { id: "expenses", label: "Expenses", icon: "expenses" },
   ];
   return (
     <nav className="bottom-nav" aria-label="Main navigation">
@@ -1387,6 +1394,173 @@ function Records({
   );
 }
 
+function ExpensesScreen({ showToast, onLock }: { showToast: (text: string) => void; onLock?: () => void }) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
+  const [totalAmount, setTotalAmount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<ExpenseEntry | null>(null);
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [spentOn, setSpentOn] = useState(today);
+  const [note, setNote] = useState('');
+  const [editPin, setEditPin] = useState('');
+
+  const loadExpenses = async () => {
+    try {
+      const result = await api.getExpenses();
+      setExpenses(result.expenses);
+      setTotalAmount(result.totalAmount);
+    } catch (error: any) {
+      showToast(error.message || 'Could not load expenses');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void loadExpenses(); }, []);
+
+  const resetForm = () => {
+    setEditing(null);
+    setCategory('');
+    setDescription('');
+    setAmount('');
+    setSpentOn(today);
+    setNote('');
+    setEditPin('');
+  };
+
+  const startEditing = (expense: ExpenseEntry) => {
+    setEditing(expense);
+    setCategory(expense.category);
+    setDescription(expense.description);
+    setAmount(String(expense.amount));
+    setSpentOn(expense.spentOn);
+    setNote(expense.note || '');
+    setEditPin('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const saveExpense = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const expenseData = {
+      category: category.trim(),
+      description: description.trim(),
+      amount: Number(amount),
+      spentOn,
+      note: note.trim(),
+    };
+    setSaving(true);
+    try {
+      if (editing) {
+        await api.updateExpense(editing.id, { ...expenseData, editPin });
+        showToast('Expense updated');
+      } else {
+        await api.createExpense(expenseData);
+        showToast('Expense saved');
+      }
+      resetForm();
+      await loadExpenses();
+    } catch (error: any) {
+      showToast(error.message || 'Could not save expense');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <TopBar title="Expense Tracker" onLock={onLock} />
+      <main className="screen-content expense-page">
+        <section className="expense-summary">
+          <div>
+            <p>Total expenses recorded</p>
+            <h1>{formatAmount(totalAmount)}</h1>
+            <span>{expenses.length} expense{expenses.length !== 1 ? 's' : ''}</span>
+          </div>
+          <span className="expense-summary-icon"><Icon name="expenses" size={24} /></span>
+        </section>
+
+        <form className="expense-form-card" onSubmit={saveExpense}>
+          <div className="expense-form-heading">
+            <div>
+              <p className="eyebrow">Expense entry</p>
+              <h2>{editing ? 'Edit expense' : 'Add an expense'}</h2>
+            </div>
+            {editing && <button type="button" className="ghost-button" onClick={resetForm}>Cancel</button>}
+          </div>
+
+          <label className="field">
+            <span>Category <b>*</b></span>
+            <input list="expense-category-options" value={category} onChange={(event) => setCategory(event.target.value)} placeholder="e.g. Prasad, decoration, transport" maxLength={60} required />
+            <datalist id="expense-category-options">
+              {['Puja Samagri', 'Prasad / Food', 'Decoration', 'Light & Sound', 'Transport', 'Labour', 'Ghat Arrangement', 'Other'].map((item) => <option key={item} value={item} />)}
+            </datalist>
+          </label>
+          <label className="field">
+            <span>What was purchased or paid for? <b>*</b></span>
+            <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="e.g. 20 kg fruits, bamboo baskets, tent rent" maxLength={160} required />
+          </label>
+          <div className="expense-form-grid">
+            <label className="field">
+              <span>Amount <b>*</b></span>
+              <input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="₹ Amount" required />
+            </label>
+            <label className="field">
+              <span>Date <b>*</b></span>
+              <input type="date" value={spentOn} onChange={(event) => setSpentOn(event.target.value)} required />
+            </label>
+          </div>
+          <label className="field">
+            <span>Extra note <small>Optional</small></span>
+            <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Vendor, quantity, or any other detail" maxLength={250} />
+          </label>
+          {editing && (
+            <label className="field expense-pin-field">
+              <span>Expense edit password <b>*</b></span>
+              <input type="password" inputMode="numeric" autoComplete="current-password" value={editPin} onChange={(event) => setEditPin(event.target.value)} placeholder="Enter edit password" required />
+              <small>Password is checked securely by the server.</small>
+            </label>
+          )}
+          <button className="primary-button expense-submit" type="submit" disabled={saving}>
+            <Icon name={editing ? 'check' : 'plus'} size={18} />
+            {saving ? 'Saving…' : editing ? 'Save changes' : 'Save expense'}
+          </button>
+        </form>
+
+        <section className="expense-records">
+          <div className="expense-records-heading">
+            <div><p className="eyebrow">Expense history</p><h2>Recorded spending</h2></div>
+            <button className="filter-icon" type="button" onClick={() => { setLoading(true); void loadExpenses(); }} aria-label="Refresh expenses"><Icon name="refresh" size={17} /></button>
+          </div>
+          {loading ? <div className="skeleton-list"><div className="skeleton-card"><i /><span><b /><b /></span><em /></div></div> : expenses.length === 0 ? (
+            <div className="empty-state expense-empty"><span><Icon name="expenses" size={28} /></span><h2>No expenses yet</h2><p>Add the first purchase or payment above.</p></div>
+          ) : (
+            <div className="expense-list">
+              {expenses.map((expense) => (
+                <article className="expense-card" key={expense.id}>
+                  <div className="expense-card-main">
+                    <div className="expense-card-copy">
+                      <span className="expense-category">{expense.category}</span>
+                      <strong>{expense.description}</strong>
+                      <small>{new Date(`${expense.spentOn}T00:00:00+05:30`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</small>
+                      {expense.note && <p>{expense.note}</p>}
+                    </div>
+                    <strong className="expense-amount">{formatAmount(expense.amount)}</strong>
+                  </div>
+                  <button type="button" className="expense-edit-button" onClick={() => startEditing(expense)}><Icon name="records" size={15} /> Edit</button>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+    </>
+  );
+}
+
 function SearchScreen({
   onSelectDonation,
   onLock,
@@ -1604,6 +1778,7 @@ export default function App() {
     return sessionStorage.getItem("cps_app_unlocked") === "true";
   });
   const [screen, setScreen] = useState<Screen>("home");
+  const [pinGateTarget, setPinGateTarget] = useState<Screen>("records");
   const [recordsUnlocked, setRecordsUnlocked] = useState(() => {
     return sessionStorage.getItem("cps_app_unlocked") === "true";
   });
@@ -1655,7 +1830,8 @@ export default function App() {
   }, [authenticated, recordsUnlocked]);
 
   const navigate = (next: Screen) => {
-    if (next === "records" && !recordsUnlocked) {
+    if ((next === "records" || next === "expenses") && !recordsUnlocked) {
+      setPinGateTarget(next);
       setPinGate(true);
       return;
     }
@@ -1704,7 +1880,7 @@ export default function App() {
           unlock={() => {
             setRecordsUnlocked(true);
             setPinGate(false);
-            setScreen("records");
+            setScreen(pinGateTarget);
           }}
         />
       </div>
@@ -1762,6 +1938,7 @@ export default function App() {
         {screen === "search" && (
           <SearchScreen onSelectDonation={handleSelectDonation} onLock={handleLock} />
         )}
+        {screen === "expenses" && <ExpensesScreen showToast={showToast} onLock={handleLock} />}
         {screen !== "receipt" && <BottomNav screen={screen} navigate={navigate} />}
         {toast && (
           <div className="toast">
