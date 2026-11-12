@@ -561,32 +561,32 @@ router.get('/export.csv', requireAdminAuth, async (req: Request, res: Response) 
       paymentMode: item.payment_mode, note: item.note,
     }));
 
-    // CSV Escape helper
-    const escapeCsv = (val: unknown) => {
-      const s = String(val ?? '');
-      if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
-        return `"${s.replace(/"/g, '""')}"`;
-      }
-      return s;
+    // Quote every cell, keep each donation on exactly one physical line, and
+    // prevent user-entered text from being interpreted as an Excel formula.
+    const escapeCsv = (val: unknown, text = false) => {
+      let value = String(val ?? '').replace(/[\r\n]+/g, ' ').trim();
+      if (text && /^[=+\-@\t]/.test(value)) value = `'${value}`;
+      return `"${value.replace(/"/g, '""')}"`;
     };
 
-    const headers = ['Bill No', 'Date', 'Time', 'Donor Name', 'Phone', 'Amount', 'Payment Mode', 'Note'];
-    const lines = [headers.join(',')];
+    const headers = ['No.', 'Bill No.', 'Date', 'Time', 'Donor Name', 'Phone Number', 'Amount (INR)', 'Payment Mode', 'Note'];
+    const lines = [headers.map((header) => escapeCsv(header)).join(',')];
 
-    for (const r of rows) {
+    for (const [index, r] of rows.entries()) {
       const dateObj = new Date(r.createdAt);
       const dateStr = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
       const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
 
       lines.push([
-        escapeCsv(r.billNo),
+        escapeCsv(index + 1),
+        escapeCsv(r.billNo, true),
         escapeCsv(dateStr),
         escapeCsv(timeStr),
-        escapeCsv(r.donorName),
-        escapeCsv(r.phone),
+        escapeCsv(r.donorName, true),
+        escapeCsv(r.phone, true),
         escapeCsv(r.amount),
-        escapeCsv(r.paymentMode),
-        escapeCsv(r.note || ''),
+        escapeCsv(r.paymentMode, true),
+        escapeCsv(r.note || '', true),
       ].join(','));
     }
 
