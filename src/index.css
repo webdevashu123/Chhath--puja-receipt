@@ -1370,6 +1370,10 @@
   color: #d6e4ed;
   font-size: 11px;
 }
+.profile-head .donor-profile-phone {
+  color: #fff;
+  font-weight: 700;
+}
 .profile-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
